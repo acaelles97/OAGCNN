@@ -1,0 +1,94 @@
+MODEL:
+  LOAD_CHECKPOINT: /mnt/gpid07/users/adria.caelles/output_dir/T05_FreezeEncoder_SmallFCN_AUGM/checkpoints/T05_FreezeEncoder_SmallFCN_AUGM_epoch_4_BEST.pth
+  FEATURE_EXTRACTOR: RVOSFeatureExtractor
+  
+  
+  RUNTIME_CONFIG:
+    # Epoch at which the actions will be done
+    FreezeRVOSEncoder: 0
+    UnfreezeRVOSEncoder: -1
+    UsePreviousInferenceMask: 4
+
+RVOSFeatureExtractor:
+  RVOS_ENCODER:
+    BACKBONE: ResNet101
+    LOAD_PRETRAINED: True
+    HIDDEN_SIZE: 128
+    KERNEL_SIZE: 3
+  
+  RVOS_ADAPTER:
+    USED_FEATURES: [x5, x4, x3, x2]
+    # 1 for not changing
+    CHANNELS_FACTOR_REDUCTION: 2
+    # With respect to input DATA.IMAGE_SIZE!
+    SPATIAL_SCALE_FACTOR: 2
+  
+  RVOS_HEAD:
+    HIDDEN_SIZE: 32
+    DROPOUT: 0.25
+    OUT_CHANNELS: 8
+
+GCNN:
+  MESSAGE_PASSING_STEPS: 3
+  MODULE: GCNNConvBlocks
+  READ_OUT: ReadOutSimple
+  NUM_CLASSES: 1
+  # MaskedNLLLoss, MaskedBCELoss, SoftIoULoss
+  LOSS_FUNCTION: SoftIoULoss
+  USE_PREVIOUS_INFERENCE_MASK: False
+  # Whether to backpropagate gradients through the predicted mask or use just the mask itself (data)
+  # Keeping gradient will increase memory usage
+  BACKPROPAGATE_PREDICTED_MASKS: True
+  
+DATA:
+  NUM_WORKERS: 0
+  SHUFFLE: True
+  DROP_LAST: True
+  BATCH_SIZE: 4
+  VAL_BATCH_SIZE: 1
+  CLIP_LENGTH: 5
+  MAX_NUM_OBJ: 10
+  IMAGE_SIZE: (256, 448)
+  AUGMENTATION: True
+
+AUG_TRANSFORMS:
+  ROTATION: 10
+  TRANSLATION: 0.1
+  SHEAR: 0.1
+  ZOOM: 0.7
+
+SOLVER:
+  OPTIMIZER: Adam
+  LR: 0.001
+  WEIGHT_DECAY: 0.0001
+  NUM_EPOCHS: 11
+  CHECKPOINTER:
+    SAVE_ALWAYS: True
+    PATIENCE: 5
+    PATIENCE_DELTA: 0.
+  USE_SCHEDULER: True
+  LR_SCHEDULER:
+    NAME: "MultiStepLR"
+    STEPS: [6, 8]
+    STEP_SIZE: 0.1
+  EVALUATION_METRIC: "loss"
+  
+
+DATASETS:
+  TRAIN: YouTubeVOS
+  TRAIN_SPLIT: train
+  TEST: YouTubeVOS
+  TEST_SPLIT: val
+
+
+GENERAL_CONFIG:
+  TRAIN_NAME: T05_FreezeEncoder_SmallFCN_AUGM
+  PRINT_EVERY: 5
+  USE_GPU: True
+
+PREDICTOR:
+  USE_GPU: True
+  OVERLAY_MASKS: True
+  BASE_PATH_IMAGES: /mnt/gpid07/users/adria.caelles/datasets/YouTubeVOS/valid/JPEGImages
+  BASE_PATH_ANNOTATIONS: /mnt/gpid07/users/adria.caelles/datasets/YouTubeVOS/valid/Annotations
+  FOLDER_TO_INFER: ["0062f687f1", "129db5183f", "246e38963b", "35948a7fca", "45d898acc4", "5460cc540a", "68dab8f80c", "7fb4f14054", "97ce735082", "aceb34fcbe", "be0daed38a", "d2df38e6fb", "eb263ef128", "00f88c4f0a", "12b8e47f00", "24947a9f29", "35d5e5149d", "45dc90f558", "547416bda1", "690219db91"]
