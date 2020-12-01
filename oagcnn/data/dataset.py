@@ -1,58 +1,40 @@
 import os.path as osp
 import torch.utils.data as data
-import json
 from .transforms.transforms import CustomComposeTransform
 import lmdb
-from .sequence_dataset import SequenceDataset
 from .clip_dataset import ClipDataset
-from abc import abstractmethod
-from oagcnn.config.defaults import cfg
 
 
-# import gin.config
-
-
-# @gin.configurable
-# To configure Augment
 class MVOSDataset(data.Dataset):
     def __init__(self,
                  images_dir,
                  annotations_dir,
                  lmdb_env_images_dir,
                  lmdb_env_annotations_dir,
-                 is_train=False,
-                 ):
+                 metadata,
+                 is_train,
+                 cfg):
 
         self.images_dir = images_dir
         self.annotations_dir = annotations_dir
         self.is_train = is_train
-
+        self._metadata = metadata
         self.lmdb_env_images = None
         self.lmdb_env_annotations = None
-        self._metadata = None
-        self.idx_to_sequence_name = {}
-        self._data = []
+        self.data = []
 
-        self._init_dataset_type()
-        self.load_metadata()
+        self._init_dataset_config(cfg)
         self.load_lmdb_env(lmdb_env_images_dir, lmdb_env_annotations_dir)
         self.create_data()
 
-    def _init_dataset_type(self):
+    def _init_dataset_config(self, cfg):
+        self.max_num_gt_objects = cfg.DATA.MAX_NUM_OBJ
         if self.is_train:
             self.clip_length = cfg.DATA.CLIP_LENGTH
             self.augment = cfg.DATA.AUGMENTATION
         else:
             self.clip_length = 1
             self.augment = False
-
-    def load_metadata(self):
-        metadata = self._read_metadata()
-        self._metadata = metadata
-
-    @abstractmethod
-    def _read_metadata(self):
-        pass
 
     def load_lmdb_env(self, lmdb_env_images_dir, lmdb_env_annotations_dir):
         # First check lmdb existence.
@@ -75,72 +57,74 @@ class MVOSDataset(data.Dataset):
             files = [bytes(osp.join(sequence_path, f).encode()) for f in _files_vec]
         return files
 
+    @staticmethod
+    def decode_filenames(list_filenames):
+        decoded_filenames = []
+        for filename in list_filenames:
+            if type(filename) != str:
+                decoded_filenames.append(str(filename.decode()))
+
+        return decoded_filenames
+
     def get_sequence_data(self, sequence):
         images_files = self._get_files_sequence(self.images_dir, sequence, self.lmdb_env_images)
         annotations_files = self._get_files_sequence(self.annotations_dir, sequence, self.lmdb_env_annotations)
-        instances_id = self._metadata[sequence]
-        return images_files, annotations_files, instances_id
 
-    def create_data_for_test(self):
-        sequences = []
-        for sequence in self._metadata.keys():
-            images_files, annotations_files, instances_id = self.get_sequence_data(sequence)
-            sequence_transform = CustomComposeTransform(self.augment)
-            sequence = ClipDataset(images_files, annotations_files, sequence_transform, instances_id, sequence)
+        images_files = self.decode_filenames(images_files)
+        annotations_files = self.decode_filenames(annotations_files)
 
-            sequences.append(sequence)
+        sequence_metadata = self._metadata[sequence]
+        return images_files, annotations_files, sequence_metadata
 
-        return sequences
+    def get_clip_metadata(self, clip_images_files, sequence_metadata):
+        clip_metadata = {}
+        for image_name in clip_images_files:
+            image_id = image_name.split("/")[-1].split(".")[0]
+            clip_metadata[image_id] = sequence_metadata.get(image_id)
+        return clip_metadata
 
+    def create_clips_from_sequence(self, images_files, annotations_files, sequence_metadata, sequence_name, transform):
+        assert len(images_files) == len(annotations_files)
+
+        starting_frame_idx = 0
+        num_frames = len(images_files)
+        num_clips = int(num_frames / self.clip_length)
+
+        for idx in range(num_clips):
+            # We need to get a slice of
+            clip_images_files = images_files[starting_frame_idx:(starting_frame_idx + self.clip_length)]
+            clip_annot_files = annotations_files[starting_frame_idx:(starting_frame_idx + self.clip_length)]
+            clip_metadata = self.get_clip_metadata(clip_images_files, sequence_metadata)
+
+            if list(clip_metadata.values())[0] is None or len(list(clip_metadata.values())[0]) == 0:
+                starting_frame_idx += self.clip_length
+                continue
+            starting_frame_idx += self.clip_length
+            clip_dataset = ClipDataset(clip_images_files, clip_annot_files, clip_metadata, sequence_name, transform, self.max_num_gt_objects)
+            self.data.append(clip_dataset)
 
     def create_data(self):
-        counter = 0
-        for sequence in self._metadata.keys():
+        for sequence_name in self._metadata.keys():
             # Get encoded files for that sequence
-            images_files, annotations_files, instances_id = self.get_sequence_data(sequence)
-            sequence_transform = CustomComposeTransform(self.augment)
-            sequence_dataset = SequenceDataset(images_files, annotations_files, sequence_transform, instances_id, sequence, self.clip_length)
-            new_data = sequence_dataset.get_data()
-            self._data.extend(sequence_dataset.get_data())
+            images_files, annotations_files, sequence_metadata = self.get_sequence_data(sequence_name)
+            transform = CustomComposeTransform(self.augment)
+            if self.is_train:
+                self.create_clips_from_sequence(images_files, annotations_files, sequence_metadata, sequence_name, transform)
+            else:
+                sequence = ClipDataset(images_files, annotations_files, sequence_metadata, sequence_name, transform, self.max_num_gt_objects)
+                self.data.append(sequence)
 
-            num_clips = len(new_data)
-            self.idx_to_sequence_name.update({idx: sequence for idx in range(counter, counter + num_clips)})
-            counter += num_clips
+    def get_sequences_for_test(self):
+        return self.data
 
     def __len__(self):
-        return len(self._data)
+        return len(self.data)
 
     def __getitem__(self, index):
-        return self._data[index].get_data()
+        return self.data[index].get_data()
 
 
 
-
-# Necessito dir on mirar sequences / dir on mirar annotations / metadata amb key sequence
-# Info basifca de treure de youtube -> Com llegir el metadata i la informació que trec de ell
-class YouTubeVOS(MVOSDataset):
-    def __init__(self, images_dir, annotations_dir, metadata_path, lmdb_images_file, lmdb_annotations_file, is_train):
-        self._metadata_path = metadata_path
-        super().__init__(images_dir, annotations_dir, lmdb_images_file, lmdb_annotations_file, is_train)
-
-
-
-    # For each video -> Annotations, Sequences and metadata as dict of key sequence  / value info
-    # We needs to check starting frame of each sequence this is shit
-    def _read_metadata(self):
-        metadata_dict = {}
-
-        with open(self._metadata_path, 'r') as f:
-            metadata = json.load(f)
-
-        # Check if any video has no annotations on the first frame
-        for sequence in metadata["videos"].keys():
-            instance_ids_str = metadata['videos'][sequence]['objects'].keys()
-            instance_ids = [int(instance_id) for instance_id in instance_ids_str]
-            # Inits instance_ids that we need to be aware of for each sequence
-            metadata_dict[sequence] = instance_ids
-
-        return metadata_dict
 
 # Note we expect a pre-generated file from davis with all the info
 # class Davis(MVOSDataset):

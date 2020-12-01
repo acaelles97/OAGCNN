@@ -77,8 +77,10 @@ SOLVER:
 DATASETS:
   TRAIN: YouTubeVOS
   TRAIN_SPLIT: train
+  VAL: YouTubeVOS
+  VAL_SPLIT: val
   TEST: YouTubeVOS
-  TEST_SPLIT: val
+  TEST_SPLIT: test
 
 
 GENERAL_CONFIG:

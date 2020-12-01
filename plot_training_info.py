@@ -201,7 +201,7 @@ def prepare_losses_dict(models_to_read):
     losses_dict = {}
     num_epochs = None
     for model in models_to_read:
-        name = model.split("/")[-1].split(".")[0]
+        name = model._split("/")[-1]._split(".")[0]
 
         train_loss, val_loss = load_losses(model)
         if num_epochs is None:

@@ -10,7 +10,7 @@ import shutil
 
 class Trainer:
     def __init__(self, cfg, model: OAGCNN, device):
-        self.train_loader = DatasetFactory.create_data_loader(cfg.DATASETS.TRAIN, cfg.DATASETS.TRAIN_SPLIT)
+        self.train_loader = DatasetFactory.create_data_loader(cfg.DATASETS.TRAIN, cfg.DATASETS.TRAIN_SPLIT, cfg)
         self.epoch = 0
         self.total_epochs = cfg.SOLVER.NUM_EPOCHS
         self.device = device
@@ -49,27 +49,29 @@ class Trainer:
         self.logger.info("Starting epoch {}/{}\n".format(self.epoch, self.total_epochs))
         self.model.train()
         for idx, sample in enumerate(self.train_loader):
-
             # Images & Targets shape: LIST CLIP_LENGTH ELEMENTS EACH ONE SHAPE (BATCH_SIZE, CHANNELS, WIDTH, HEIGHT)
             inputs, targets, valid_targets, sequence_name = sample["images"], sample["objs_masks"], sample["valid_masks"],  sample["sequence"]
 
             clip_loss = torch.tensor(0.).to(self.device)
 
-            init_gt_masks = targets[0]
-            init_valid_masks = valid_targets[0]
+            active_objs_masks = targets[0].clone().to(self.device)
+            active_valid_masks = valid_targets[0].clone().to(self.device)
 
             # Inits objects to track
-            self.model.init_clip(init_gt_masks, init_valid_masks)
+            # self.model.init_clip(init_gt_masks, init_valid_masks)
 
             # Iterate through each frame in the clip
             for batched_image, batched_gt_mask, batched_valid_target in zip(inputs, targets, valid_targets):
                 # Note we just care abut GT objects once they appear 1 time
                 # Check if there is any change on this frame
-                _, loss = self.model(batched_image, batched_gt_mask, batched_valid_target)
+                _, loss, active_objs_masks, active_valid_masks = self.model(batched_image, batched_gt_mask, batched_valid_target, active_objs_masks, active_valid_masks)
                 clip_loss = loss + clip_loss
 
             self.model.optimizer_step(clip_loss)
             self.loss_container.update(clip_loss.cpu().item(), self.epoch)
+
+            if self.iter >= 10:
+                break
 
             self.iter += 1
 

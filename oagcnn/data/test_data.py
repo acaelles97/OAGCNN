@@ -15,7 +15,6 @@ class TestDataset(data.Dataset):
         self.transform = CustomComposeTransform(False)
         self._load_init_annot()
 
-
     def _init_frames(self, input_folder):
         self.sequence_name = input_folder.split("/")[-1]
         self.list_frames = [os.path.join(input_folder, frame_name) for frame_name in sorted(os.listdir(input_folder))]

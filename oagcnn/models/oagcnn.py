@@ -76,7 +76,50 @@ class OAGCNN(nn.Module):
         self.use_previous_inference_mask = cfg.GCNN.USE_PREVIOUS_INFERENCE_MASK
         self.runtime_actions = {int(epoch): action for action, epoch in cfg.MODEL.RUNTIME_CONFIG.items() if epoch >= 0}
 
-        self.active_objects_tracker = ActiveObjectsTracker(self.device, cfg.GCNN.BACKPROPAGATE_PREDICTED_MASKS)
+        self.active_obj_masks = None
+        self.active_valid_masks = None
+        self.mask_backpropagation = cfg.GCNN.BACKPROPAGATE_PREDICTED_MASKS
+
+        # self.active_objects_tracker = ActiveObjectsTracker(self.device, cfg.GCNN.BACKPROPAGATE_PREDICTED_MASKS)
+
+    # def init_object_tracker(self, init_gt_masks, init_valid_masks):
+    #     if self.mask_backpropagation:
+    #         self.gt_masks = init_gt_masks.to(self.device)
+    #         self.valid_targets = init_valid_masks.to(self.device)
+    #     else:
+    #         self.gt_masks = init_gt_masks.to(self.device)
+    #         self.valid_targets = init_valid_masks.to(self.device)
+
+    def update_active_objects(self, active_objs_masks, active_valid_masks, new_gt_masks, new_valid_targets):
+        objs_changes = torch.ne(active_valid_masks, new_valid_targets)
+        if objs_changes.any():
+            # We just care about objects that are new (1st appearance) on the clip -> batched_valid_target == True and valid_masks_record
+            # == False on the positions where there are changes
+            new_appearance_ids = torch.bitwise_and(torch.bitwise_and(objs_changes, new_valid_targets),
+                                                   torch.bitwise_and(torch.logical_not(active_valid_masks), objs_changes))
+            # Check if there is any appearance
+            if new_appearance_ids.any():
+                # Set valid mask to True as from now one we will track this objects
+                new_valid_masks = torch.bitwise_or(active_valid_masks, new_appearance_ids)
+                mask_to_op = torch.zeros_like(active_objs_masks)
+                mask_to_op[new_appearance_ids, :, :] = 1
+                new_objs_masks = mask_to_op * new_gt_masks + active_objs_masks
+
+                # Give the model first GT mask for that appearance
+                # active_objs_masks = new_gt_masks * new_appearance_ids + active_objs_masks * torch.logical_not(new_appearance_ids)
+                # active_objs_masks.clone()
+                # active_objs_masks[new_appearance_ids] = new_gt_masks[new_appearance_ids]
+
+                return new_objs_masks, new_valid_masks
+
+        return active_objs_masks,  active_valid_masks
+
+    def update_masks(self, new_masks):
+        if self.mask_backpropagation:
+            self.gt_masks = new_masks
+        else:
+            self.gt_masks = new_masks.detach()
+
 
     def get_parameters_custom(self):
         return filter(lambda p: p.requires_grad, self.parameters())
@@ -84,35 +127,46 @@ class OAGCNN(nn.Module):
     def init_clip(self, init_gt_masks, init_valid_masks):
         self.active_objects_tracker.init_object_tracker(init_gt_masks, init_valid_masks)
 
-    def test_forward(self, batched_image):
+    def test_forward(self, batched_image, batched_gt_mask, batched_valid_target, active_objs_masks, active_valid_masks):
         batched_image = batched_image.to(self.device)
+        batched_gt_mask = batched_gt_mask.to(self.device)
+        batched_valid_target = batched_valid_target.to(self.device)
+
+        active_objs_masks, active_valid_masks = self.update_active_objects(active_objs_masks, active_valid_masks, batched_gt_mask,
+                                                                           batched_valid_target)
         feats = self.feature_extractor(batched_image)
         # (BATCH_SIZE, NUM_OBJ, H, W) -> Same order as given in objs masks so the relation is element to element
-        out_masks = self.gcnn(feats, self.active_objects_tracker.gt_masks, self.active_objects_tracker.valid_targets)
-        self.active_objects_tracker.update_masks(out_masks)
+        out_masks = self.gcnn(feats, active_objs_masks, active_valid_masks)
 
-        return out_masks
+        active_objs_masks = out_masks
 
-    def forward(self, batched_image, batched_gt_mask, batched_valid_target):
+        return out_masks, active_objs_masks, active_valid_masks
+
+    def forward(self, batched_image, batched_gt_mask, batched_valid_target, active_objs_masks, active_valid_masks):
             batched_image = batched_image.to(self.device)
             batched_gt_mask = batched_gt_mask.to(self.device)
             batched_valid_target = batched_valid_target.to(self.device)
 
-            self.active_objects_tracker.update_active_objects(batched_gt_mask, batched_valid_target)
+            active_objs_masks, active_valid_masks = self.update_active_objects(active_objs_masks, active_valid_masks, batched_gt_mask, batched_valid_target)
 
             feats = self.feature_extractor(batched_image)
             # (BATCH_SIZE, NUM_OBJ, H, W) -> Same order as given in objs masks so the relation is element to element
-            out_masks = self.gcnn(feats, self.active_objects_tracker.gt_masks, self.active_objects_tracker.valid_targets)
+            out_masks = self.gcnn(feats, active_objs_masks, active_valid_masks)
 
             loss = self.compute_loss(batched_gt_mask, out_masks, batched_valid_target)
 
             if self.use_previous_inference_mask:
-                # We need to reset what contains only interested in data
-                self.active_objects_tracker.update_masks(out_masks)
-            else:
-                self.active_objects_tracker.update_masks(batched_gt_mask)
+                if self.mask_backpropagation:
+                    active_objs_masks = out_masks
+                else:
+                    active_objs_masks = out_masks.detach()
 
-            return out_masks, loss
+                # We need to reset what contains only interested in data
+                # self.active_objects_tracker.update_masks(out_masks)
+            else:
+                active_objs_masks = batched_gt_mask
+
+            return out_masks, loss, active_objs_masks, active_valid_masks
 
     def optimizer_step(self, clip_loss):
         self._global_optim.zero_grad()

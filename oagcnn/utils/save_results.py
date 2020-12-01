@@ -89,7 +89,6 @@ class SaveResults:
         plt.axis('off')
         plt.figure()
         plt.axis('off')
-        image = image / 255
         plt.imshow(image)
         num_masks = out_masks.shape[0]
 
@@ -103,7 +102,7 @@ class SaveResults:
                 tmp_img[:, :, i] = color_mask[i]
             ax.imshow(np.dstack((tmp_img, mask_pred * 0.7)))
 
-        out_folder = os.path.join(self.output_path, sequence_name)
+        out_folder = os.path.join(self.output_path, sequence_name[0])
         if not os.path.exists(out_folder):
             os.makedirs(out_folder, exist_ok=True)
 

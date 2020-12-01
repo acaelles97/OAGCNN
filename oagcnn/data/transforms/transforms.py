@@ -16,7 +16,6 @@ class CustomComposeTransform:
         self.to_tensor = ToTensor()
         self.normalize = Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
         self.augment = augment
-
         self.custom_affine = None
         if augment:
             self.create_tf_matrix = CustomRandomAffine(rotation_range=cfg.AUG_TRANSFORMS.ROTATION,
@@ -60,8 +59,11 @@ class CustomComposeTransform:
     def final_annot_test_transform(self, annotation, valid_masks):
         return self.to_tensor(annotation), self.to_tensor(valid_masks)
 
-    def final_image_test_transform(self, image):
-        return self.normalize(self.to_tensor(image))
+    def test_image_transform(self, image):
+        return self.normalize(self.to_tensor(self.resize_image(image)))
 
-    def initial_image_test_transform(self, image):
-        return self.resize_image(image)
+    # def final_image_test_transform(self, image):
+    #     return self.normalize(self.to_tensor(image))
+    #
+    # def initial_image_test_transform(self, image):
+    #     return self.resize_image(image)

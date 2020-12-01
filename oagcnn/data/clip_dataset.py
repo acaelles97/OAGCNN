@@ -1,33 +1,47 @@
 import torch.utils.data as data
 from PIL import Image
 import numpy as np
-from oagcnn.config.defaults import cfg
 
 
 class ClipDataset(data.Dataset):
-
-    def __init__(self, clip_images_files, clip_annot_files, transform, instances_id, sequence_name):
+    def __init__(self, clip_images_files, clip_annot_files, clip_metadata, sequence_name, transform, max_num_gt_objects):
         self.clip_images_files = clip_images_files
         self.clip_annot_files = clip_annot_files
-        self.instances_id = instances_id
+        self.clip_metadata = clip_metadata
         self.transform = transform
-        self.max_num_gt_objects = cfg.DATA.MAX_NUM_OBJ
+        self.max_num_gt_objects = max_num_gt_objects
         self.sequence_name = sequence_name
+        self.correct_clip()
 
-        self.prepare_filenames()
+    def get_sequence_name(self):
+        return self.sequence_name
 
-    def prepare_filenames(self):
-        clip_images_files = []
-        clip_annot_files = []
-        for image_file, annot_file in zip(self.clip_images_files, self.clip_annot_files):
-            if type(annot_file) != str:
-                annot_file = str(annot_file.decode())
-            if type(image_file) != str:
-                image_file = str(image_file.decode())
-            clip_images_files.append(image_file)
-            clip_annot_files.append(annot_file)
-        self.clip_images_files = clip_images_files
-        self.clip_annot_files = clip_annot_files
+    def get_frame_name(self, filename):
+        return filename.split("/")[-1].split(".")[0]
+
+    def correct_clip(self):
+        existing_frames = [self.get_frame_name(image_file) for image_file in self.clip_images_files]
+
+        idx_clip_start = existing_frames.index(sorted(list(self.clip_metadata.keys()))[0])
+        self.clip_images_files = self.clip_images_files[idx_clip_start:]
+        self.clip_annot_files = self.clip_annot_files[idx_clip_start:]
+
+        if len(self.clip_images_files) != len(self.clip_annot_files):
+            new_clip_annot_files = []
+            existing_masks = [self.get_frame_name(annot_file) for annot_file in self.clip_annot_files]
+
+            starting_frame_idx = existing_frames.index(existing_masks[0])
+
+            for idx in range(starting_frame_idx, len(existing_frames)):
+                frame_name = existing_frames[idx]
+                if frame_name in existing_masks:
+                    idx = existing_masks.index(frame_name)
+                    new_clip_annot_files.append(self.clip_annot_files[idx])
+                else:
+                    new_clip_annot_files.append(None)
+
+            self.clip_images_files = self.clip_images_files[starting_frame_idx:]
+            self.clip_annot_files = new_clip_annot_files
 
     def load_frame(self, image_file, annot_file):
         image = Image.open(image_file)
@@ -43,75 +57,99 @@ class ClipDataset(data.Dataset):
 
         annotation[annotation == 255] = 0
 
-        gt_objs_masks, valid_masks = self.sequence_from_masks(annotation)
+        id_frame = self.get_frame_name(image_file)
+        gt_objs_masks, valid_masks, categories = self.sequence_from_masks(id_frame, annotation)
         gt_objs_masks = self.transform.final_transform(gt_objs_masks)
 
-        return image, gt_objs_masks, valid_masks
+        return image, gt_objs_masks, valid_masks, categories
 
     def get_data(self):
-        # In test mode we go frame by frame
-        if len(self.clip_images_files) == 1:
-            image, gt_objs_masks, valid_masks = self.load_frame(self.clip_images_files[0], self.clip_annot_files[0])
-            return {"images": image, "objs_masks": gt_objs_masks, "valid_masks": valid_masks, "sequence": self.sequence_name, "frame_name": self.clip_images_files[0]}
+        clip_images = []
+        clip_gts_objs_masks = []
+        clip_valid_masks = []
+        clip_categories = []
 
-        else:
-            clip_images = []
-            clip_gts_objs_masks = []
-            clip_valid_masks = []
+        for image_file, annot_file in zip(self.clip_images_files, self.clip_annot_files):
+            image, gt_objs_masks, valid_masks, categories = self.load_frame(image_file, annot_file)
 
-            for image_file, annot_file in zip(self.clip_images_files, self.clip_annot_files):
-                image, gt_objs_masks, valid_masks = self.load_frame(image_file, annot_file)
+            clip_images.append(image)
+            clip_gts_objs_masks.append(gt_objs_masks)
+            clip_valid_masks.append(valid_masks)
+            clip_categories.append(categories)
 
-                clip_images.append(image)
-                clip_gts_objs_masks.append(gt_objs_masks)
-                clip_valid_masks.append(valid_masks)
+        return {"images": clip_images, "objs_masks": clip_gts_objs_masks, "valid_masks": clip_valid_masks, "sequence": self.sequence_name}
 
-            return {"images": clip_images, "objs_masks": clip_gts_objs_masks, "valid_masks": clip_valid_masks, "sequence": self.sequence_name}
+    def generate_empty_masks(self, height, width):
+        gt_objs_masks = np.zeros((height, width, self.max_num_gt_objects), dtype=np.float32)
+        valid_masks = np.zeros((self.max_num_gt_objects, 1), dtype=np.bool_)
+        categories = np.zeros((self.max_num_gt_objects, 1), dtype="<U25")
 
-    def sequence_from_masks(self, annot):
+        return gt_objs_masks, valid_masks, categories
+
+    def sequence_from_masks(self, id_frame, annot):
         """
         Reads segmentation masks and outputs sequence of binary masks and labels
         """
 
         h, w = annot.shape[0], annot.shape[1]
+        gt_objs_masks, valid_masks, categories = self.generate_empty_masks(h, w)
 
-        total_num_instances = len(self.instances_id)
-        max_instance_id = 0
-        if total_num_instances > 0:
-            max_instance_id = int(np.max(self.instances_id))
+        frame_instances = self.clip_metadata.get(id_frame)
+        if frame_instances is None:
+            print("OJO")
+            return gt_objs_masks, valid_masks.squeeze(), categories
 
-        num_instances = max(self.max_num_gt_objects, max_instance_id)
+        total_num_instances = min(self.max_num_gt_objects, len(frame_instances))
+        for instance_idx in range(total_num_instances):
+            instance = frame_instances[instance_idx]
+            category = instance["category"]
+            instance_id = int(instance["instance_id"])
+            instance_mask = annot == instance_id
 
-        gt_objs_masks = np.zeros((h, w, num_instances), dtype=np.float32)
-        valid_masks = np.zeros((num_instances, 1), dtype=np.bool_)
-        # for sorting by size: no used in rvos
-        # size_masks = np.zeros((num_instances,))
-
-        for i in range(total_num_instances):
-            id_instance = int(self.instances_id[i])
-            mask_positions = annot == id_instance
-            # Note: we need to check that in that clip the instance_id appears. Note that instance_ids refers to all sequence, and here we
-            # are working with a small clip.
-            # if not np.any(mask_positions):
-            #     continue
             aux_mask = np.zeros((h, w), dtype=np.float32)
-            aux_mask[mask_positions] = 1
-            gt_objs_masks[:, :, id_instance - 1] = aux_mask
-            # Not used on rvos
+            aux_mask[instance_mask] = 1
+            gt_objs_masks[:, :, instance_id - 1] = aux_mask
+            valid_masks[instance_id - 1] = True
+            categories[instance_id - 1] = category
+
             # size_masks[id_instance - 1] = np.sum(gt_seg[id_instance - 1, :])
-            valid_masks[id_instance - 1] = True
+        valid_masks = valid_masks.squeeze()
 
-        gt_objs_masks = gt_objs_masks[..., :self.max_num_gt_objects]
-        valid_masks = valid_masks[..., :self.max_num_gt_objects].squeeze()
+        return gt_objs_masks, valid_masks, categories
 
-        # Goes from (MAX_NUM_GT_OBJ, W*H) -> (MAX_NUM_GT_OBJ, W*H+1) where we add this last vector shape (MAX_NUM_GT_OBJ, 1) that indicates the masks that really contain objects)
+    def load_image_for_test(self, image_file):
+        image = Image.open(image_file)
+        image = self.transform.test_image_transform(image)
+        return image
 
-        return gt_objs_masks, valid_masks
+    def load_annotations_for_test(self, frame_name, annot_file, height, width):
+        if annot_file is None:
+            gt_objs_masks, valid_masks, categories = self.generate_empty_masks(height, width)
 
-    # Used when working with Test, as we have a dataloader for each sequence, which will be represented with a clip
+        else:
+            annotation = Image.open(annot_file)
+            annotation = self.transform.initial_annot_test_transform(annotation)
+
+            annotation = np.array(annotation, dtype=np.float32)
+            annotation[annotation == 255] = 0
+
+            gt_objs_masks, valid_masks, categories = self.sequence_from_masks(frame_name, annotation)
+
+        gt_objs_masks = self.transform.final_transform(gt_objs_masks)
+
+        return gt_objs_masks, valid_masks, categories
+
+    def __len__(self):
+        return len(self.clip_images_files)
+
     def __getitem__(self, idx):
-        image_file, annot_file = self.clip_images_files[idx], self.clip_annot_files[idx]
-        image, gt_objs_masks, valid_masks = self.load_frame(image_file, annot_file)
-        return {"images": image, "objs_masks": gt_objs_masks, "valid_masks": valid_masks, "sequence": self.sequence_name}
+        image_file = self.clip_images_files[idx]
+        annot_file = self.clip_annot_files[idx]
+        frame_name = self.get_frame_name(image_file)
+        image = self.load_image_for_test(image_file)
+        height, width = image.shape[1], image.shape[2]
 
+        gt_objs_masks, valid_masks, categories = self.load_annotations_for_test(frame_name, annot_file, height, width)
 
+        return {"image": image, "objs_masks": gt_objs_masks, "valid_masks": valid_masks, "sequence": self.sequence_name,
+                "frame_name": frame_name}
