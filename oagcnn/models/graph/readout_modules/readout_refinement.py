@@ -30,7 +30,7 @@ class Refine(nn.Module):
         super(Refine, self).__init__()
         self.convFS = nn.Conv2d(inplanes, planes, kernel_size=(3, 3), padding=(1, 1), stride=1)
         self.ResFS = ResBlock(planes, planes)
-        self.ResMM = ResBlock(planes, planes)
+        self.ResMM = ResBlock(planes, planes)a
         self.scale_factor = scale_factor
 
     def forward(self, f, pm):
