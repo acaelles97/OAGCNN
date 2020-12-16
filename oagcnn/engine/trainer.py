@@ -44,6 +44,18 @@ class Trainer:
         model_state_dict.update({"val_loss": self.evaluator.get_loss()})
         torch.save(model_state_dict, output_path)
 
+    def resume_training(self, checkpoint_path):
+        model_state_dict = torch.load(checkpoint_path)
+        self.epoch = model_state_dict["epoch"] + 1
+        self.loss_container.load_loss_container(model_state_dict["train_loss"])
+        self.evaluator.load_state_dict(model_state_dict)
+        actions_done = self.model.resume_training(model_state_dict, self.epoch)
+        if actions_done:
+            for action in actions_done:
+                self.logger.info("Action done before epoch {}: Action: {}".format(self.epoch, action))
+
+        self.train()
+
     def train_epoch(self):
         self.iter = 0
         self.logger.info("Starting epoch {}/{}\n".format(self.epoch, self.total_epochs))
@@ -54,29 +66,26 @@ class Trainer:
 
             clip_loss = torch.tensor(0.).to(self.device)
 
-            active_objs_masks = targets[0].clone().to(self.device)
-            active_valid_masks = valid_targets[0].clone().to(self.device)
+            # active_objs_masks = targets[0].clone().to(self.device)
+            # active_valid_masks = valid_targets[0].clone().to(self.device)
 
             # Inits objects to track
-            # self.model.init_clip(init_gt_masks, init_valid_masks)
+            self.model.init_object_tracker(targets[0].clone(), valid_targets[0].clone())
 
             # Iterate through each frame in the clip
             for batched_image, batched_gt_mask, batched_valid_target in zip(inputs, targets, valid_targets):
                 # Note we just care abut GT objects once they appear 1 time
                 # Check if there is any change on this frame
-                _, loss, active_objs_masks, active_valid_masks = self.model(batched_image, batched_gt_mask, batched_valid_target, active_objs_masks, active_valid_masks)
+                loss = self.model(batched_image, batched_gt_mask, batched_valid_target)
                 clip_loss = loss + clip_loss
 
             self.model.optimizer_step(clip_loss)
             self.loss_container.update(clip_loss.cpu().item(), self.epoch)
 
-            if self.iter >= 10:
-                break
-
             self.iter += 1
 
             if self.iter % self.print_every == 0:
-                self.logger.info("Iter {}/{} \t Loss: {}".format(self.iter, len(self.train_loader), self.loss_container.get_mean_last_iter(self.epoch)))
+                self.logger.info("Epoch {}/{} \t Iter {}/{} \t Loss: {}".format(self.epoch, self.total_epochs, self.iter, len(self.train_loader), self.loss_container.get_mean_last_iter(self.epoch)))
 
         self.logger.info("Finished epoch {} \t Mean Total Loss: {}".format(self.epoch, self.loss_container.get_mean_last_iter(self.epoch)))
 

@@ -6,13 +6,13 @@ MODEL:
     # Epoch at which the actions will be done
     FreezeRVOSEncoder: 0
     UnfreezeRVOSEncoder: -1
-    UsePreviousInferenceMask: 4
+    UsePreviousInferenceMask: -1
 
 OAGCNN:
-  MESSAGE_PASSING_STEPS: 5
-  USE_TEMPORAL_FEATURES: True
-  BACKPROPAGATE_FEATURES: True
-  USE_PREVIOUS_INFERENCE_MASK: False
+  MESSAGE_PASSING_STEPS: 4
+  USE_TEMPORAL_FEATURES: False
+  BACKPROPAGATE_FEATURES: False
+  USE_PREVIOUS_INFERENCE_MASK: True
   # Whether to backpropagate gradients through the predicted mask or use just the mask itself (data)
   # Keeping gradient will increase memory usage
   BACKPROPAGATE_PREDICTED_MASKS: True
@@ -26,7 +26,7 @@ OAGCNN:
     GRAPH:
       MASK_ENCODING_MODULE: MaskCatEncoder
       # GCNNSimple, GCNNConvBlocks, GRUGCNN
-      GCNN_MODULE: AttentionGRUGCNN
+      GCNN_MODULE: GCNNSimple
       READ_OUT: ReadOutSimple
 
 
@@ -71,15 +71,15 @@ SOLVER:
   OPTIMIZER: Adam
   LR: 0.001
   WEIGHT_DECAY: 0.0001
-  NUM_EPOCHS: 11
+  NUM_EPOCHS: 20
   CHECKPOINTER:
     SAVE_ALWAYS: True
-    PATIENCE: 5
+    PATIENCE: 10
     PATIENCE_DELTA: 0.
   USE_SCHEDULER: True
   LR_SCHEDULER:
     NAME: "MultiStepLR"
-    STEPS: [6, 8]
+    STEPS: [14, 17]
     STEP_SIZE: 0.1
   EVALUATION_METRIC: "loss"
   
@@ -94,6 +94,6 @@ DATASETS:
 
 
 GENERAL_CONFIG:
-  TRAIN_NAME: T05_FreezeEncoder_SmallFCN_AUGM
+  TRAIN_NAME: T01.00_SIMPLE-BASELINE
   PRINT_EVERY: 5
   USE_GPU: True

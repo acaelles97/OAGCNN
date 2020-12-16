@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
-from oagcnn.models.feature_extractor.deeplab.sync_batchnorm.batchnorm import SynchronizedBatchNorm2d
+from oagcnn.models.feature_extractor.deeplab_OLD.sync_batchnorm.batchnorm import SynchronizedBatchNorm2d
 import torch.utils.model_zoo as model_zoo
 
 def conv_bn(inp, oup, stride, BatchNorm):

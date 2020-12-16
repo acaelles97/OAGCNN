@@ -4,6 +4,20 @@ import numpy as np
 import itertools
 import argparse
 import os
+import matplotlib.patches as mpatches
+
+
+def get_color_map():
+    return {
+        0: "green",
+        1: "red",
+        2: "blue",
+        3: "black",
+        4: "magenta",
+        5: "cyan"
+    }
+
+
 
 def argument_parser():
 
@@ -201,7 +215,7 @@ def prepare_losses_dict(models_to_read):
     losses_dict = {}
     num_epochs = None
     for model in models_to_read:
-        name = model._split("/")[-1]._split(".")[0]
+        name = ".".join(model.split("/")[-1].split(".")[:-1])
 
         train_loss, val_loss = load_losses(model)
         if num_epochs is None:
@@ -216,24 +230,27 @@ def prepare_losses_dict(models_to_read):
 
 def get_train_val_values(losses, partitions, num_epochs, out_path):
     fig, ax = plt.subplots()
-    fig.set_size_inches(18.5, 10.5)
+    fig.set_size_inches(25.5, 15.5)
     ax.set_title("Losses plot")
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Loss")
+
     x_coordinates = np.linspace(0, num_epochs, num_epochs * partitions)
 
-    for model, losses in losses.items():
+    color_map = get_color_map()
+    patches = []
+    for idx, (model, losses) in enumerate(losses.items()):
         training_loss = losses["training_loss"]
         validation_loss = losses["validation_loss"]
 
         smoothed_training_loss = get_smoothed_training_loss(training_loss, partitions)
         mean_val_loss = get_average_val_loss(validation_loss, partitions)
 
-        ax.plot(x_coordinates, np.array(smoothed_training_loss), label='Training_loss: {}'.format(model))
-        ax.plot(x_coordinates, np.array(mean_val_loss), label='Validation_loss: {}'.format(model))
+        ax.plot(x_coordinates, np.array(smoothed_training_loss), label='Training_loss: {}'.format(model), color=color_map[idx])
+        ax.plot(x_coordinates, np.array(mean_val_loss), label='Validation_loss: {}'.format(model), color=color_map[idx])
+        patches.append(mpatches.Patch(color=color_map[idx], label=model))
 
-    ax.legend()
-
+    plt.legend(handles=patches)
     out_path = os.path.join(out_path, "all_train_val_loss.png")
     plt.savefig(out_path)
 
@@ -258,4 +275,4 @@ if __name__ == "__main__":
     # plot_validation_loss_per_pieces(loaded_validation_loss, args.out_path)
 
     losses_dict, num_epochs = prepare_losses_dict(args.model_path)
-    get_train_val_values(losses_dict, 20, num_epochs, args.out_path)
+    get_train_val_values(losses_dict, 25, num_epochs, args.out_path)

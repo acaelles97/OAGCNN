@@ -2,7 +2,7 @@ import math
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.model_zoo as model_zoo
-from oagcnn.models.feature_extractor.deeplab.sync_batchnorm.batchnorm import SynchronizedBatchNorm2d
+from oagcnn.models.feature_extractor.deeplab_OLD.sync_batchnorm.batchnorm import SynchronizedBatchNorm2d
 
 def fixed_padding(inputs, kernel_size, dilation):
     kernel_size_effective = kernel_size + (kernel_size - 1) * (dilation - 1)

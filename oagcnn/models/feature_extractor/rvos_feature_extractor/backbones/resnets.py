@@ -1,4 +1,4 @@
-# from torchvision.models.resnet import BasicBlock, Bottleneck, ResNet
+# from torchvision.models.resnet import BasicBlock, Bottleneck, ResNetreplace_stride_with_dilation
 from .old_torchvision_resnet import BasicBlock, Bottleneck, ResNet
 from torchvision import models
 

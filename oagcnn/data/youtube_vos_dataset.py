@@ -9,7 +9,7 @@ from .dataset import MVOSDataset
 class YouTubeVOSDataset(MVOSDataset):
     _AVAILABLE_SETS = {"train", "val", "train_val", "test"}
 
-    def __init__(self, split, cfg):
+    def __init__(self, split, cfg, collect_info = False):
         if split not in YouTubeVOSDataset._AVAILABLE_SETS:
             raise ValueError("Split selected {} is not available for YouTube".format(split))
 
@@ -30,8 +30,13 @@ class YouTubeVOSDataset(MVOSDataset):
         lmdb_annotations_file = self._get_lmdb_annotations_dir("YouTubeVOS", lmdb_dir)
         metadata = self._get_metadata()
         is_train = split in ["train", "train_val"]
+        if not collect_info:
+            super().__init__(images_dir, annotations_dir, lmdb_images_file, lmdb_annotations_file, metadata, is_train, cfg)
 
-        super().__init__(images_dir, annotations_dir, lmdb_images_file, lmdb_annotations_file, metadata, is_train, cfg)
+        else:
+            self.images_dir = images_dir
+            self.annotations_dir = annotations_dir
+            self.metadata = metadata
 
     def _init_split_to_folder_data(self):
         if self._split == 'train':

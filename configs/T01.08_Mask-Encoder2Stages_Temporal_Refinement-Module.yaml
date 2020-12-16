@@ -1,18 +1,18 @@
 
 
 MODEL:
-  LOAD_CHECKPOINT: /mnt/gpid07/users/adria.caelles/output_dir/T02_GCNN-TRAINING/checkpoints/T02_GCNN-TRAINING_epoch_6.pth
+  LOAD_CHECKPOINT: /mnt/gpid07/users/adria.caelles/output_dir/T01.05_MASK-ENCODER_TEMPORAL/checkpoints/T01.05_MASK-ENCODER_TEMPORAL_epoch_13_BEST.pth
   RUNTIME_CONFIG:
     # Epoch at which the actions will be done
     FreezeRVOSEncoder: 0
     UnfreezeRVOSEncoder: -1
-    UsePreviousInferenceMask: 4
+    UsePreviousInferenceMask: 7
 
 OAGCNN:
-  MESSAGE_PASSING_STEPS: 5
+  MESSAGE_PASSING_STEPS: 3
   USE_TEMPORAL_FEATURES: True
   BACKPROPAGATE_FEATURES: True
-  USE_PREVIOUS_INFERENCE_MASK: False
+  USE_PREVIOUS_INFERENCE_MASK: True
   # Whether to backpropagate gradients through the predicted mask or use just the mask itself (data)
   # Keeping gradient will increase memory usage
   BACKPROPAGATE_PREDICTED_MASKS: True
@@ -24,11 +24,17 @@ OAGCNN:
     FEATURE_EXTRACTOR: RVOSFeatureExtractor
     
     GRAPH:
-      MASK_ENCODING_MODULE: MaskCatEncoder
+      MASK_ENCODING_MODULE: MaskEncoderTwoStages
       # GCNNSimple, GCNNConvBlocks, GRUGCNN
-      GCNN_MODULE: AttentionGRUGCNN
-      READ_OUT: ReadOutSimple
+      GCNN_MODULE: GRUGCNN
+      READ_OUT: ReadOutWithRefinement
 
+
+MaskEncoderTwoStages:
+  OUT_CHANNELS: 128
+  INT_CHANNELS: 64
+  DROPOUT: 0.2
+  USE_SKIP_MASK_CONNECTION: True
 
 RVOSFeatureExtractor:
   RVOS_ENCODER:
@@ -42,16 +48,16 @@ RVOSFeatureExtractor:
     # 1 for not changing
     CHANNELS_FACTOR_REDUCTION: 2
     # With respect to input DATA.IMAGE_SIZE!
-    SPATIAL_SCALE_FACTOR: 2
+    SPATIAL_SCALE_FACTOR: 4
   
   #Should be moved to another place
   RVOS_HEAD:
-    HIDDEN_SIZE: 32
+    HIDDEN_SIZE: 64
     DROPOUT: 0.25
-    OUT_CHANNELS: 8
+    OUT_CHANNELS: 32
 
 DATA:
-  NUM_WORKERS: 5
+  NUM_WORKERS: 0
   SHUFFLE: True
   DROP_LAST: True
   BATCH_SIZE: 4
@@ -71,15 +77,15 @@ SOLVER:
   OPTIMIZER: Adam
   LR: 0.001
   WEIGHT_DECAY: 0.0001
-  NUM_EPOCHS: 11
+  NUM_EPOCHS: 20
   CHECKPOINTER:
     SAVE_ALWAYS: True
-    PATIENCE: 5
+    PATIENCE: 10
     PATIENCE_DELTA: 0.
   USE_SCHEDULER: True
   LR_SCHEDULER:
     NAME: "MultiStepLR"
-    STEPS: [6, 8]
+    STEPS: [14, 17]
     STEP_SIZE: 0.1
   EVALUATION_METRIC: "loss"
   
@@ -92,8 +98,14 @@ DATASETS:
   TEST: YouTubeVOS
   TEST_SPLIT: test
 
+PREDICTOR:
+  USE_GPU: True
+  OVERLAY_MASKS: False
+  INSTANCE_RESULTS: False
+  PREPARE_SUBMISSION_RESULTS: True
+  USE_METADATA_GT_INFO: True
 
 GENERAL_CONFIG:
-  TRAIN_NAME: T05_FreezeEncoder_SmallFCN_AUGM
+  TRAIN_NAME: T01.08_MASK-ENCODER-2STAGES_TEMPORAL_READ-OUT_REFINEMENT
   PRINT_EVERY: 5
   USE_GPU: True

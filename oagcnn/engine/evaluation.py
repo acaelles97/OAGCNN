@@ -20,6 +20,9 @@ class Evaluator:
     def get_loss(self):
         return self.loss_container.get_loss_container()
 
+    def load_state_dict(self, state_dict):
+        self.loss_container.load_loss_container(state_dict["val_loss"])
+
     def validate(self, epoch):
         if epoch not in self.validation_epochs:
             return
@@ -37,10 +40,9 @@ class Evaluator:
                     image, target, valid_target, sequence_name = sample["image"], sample["objs_masks"], sample["valid_masks"], sample[
                         "sequence"]
                     if idx == 0:
-                        active_objs_masks = target.clone().to(self.device)
-                        active_valid_masks = valid_target.clone().to(self.device)
+                        self.model.init_object_tracker(target.clone(), valid_target.clone())
 
-                    _, loss, active_objs_masks, active_valid_masks = self.model(image, target, valid_target, active_objs_masks, active_valid_masks)
+                    loss = self.model(image, target, valid_target)
                     sequence_loss.append(loss.cpu().item())
 
                 average_sequence_loss = np.mean(sequence_loss)

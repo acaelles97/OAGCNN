@@ -3,7 +3,6 @@
 ###################################################
 import torch
 from torch import nn
-import torch.nn.functional as F
 from torch.nn import init
 
 
@@ -20,12 +19,12 @@ class ConvGRUCell(nn.Module):
         self.update_gate = nn.Conv2d(input_size + hidden_size, hidden_size, kernel_size, padding=self.padding)
         self.out_gate = nn.Conv2d(input_size + hidden_size, hidden_size, kernel_size, padding=self.padding)
 
-        init.orthogonal(self.reset_gate.weight)
-        init.orthogonal(self.update_gate.weight)
-        init.orthogonal(self.out_gate.weight)
-        init.constant(self.reset_gate.bias, 0.)
-        init.constant(self.update_gate.bias, 0.)
-        init.constant(self.out_gate.bias, 0.)
+        init.orthogonal_(self.reset_gate.weight)
+        init.orthogonal_(self.update_gate.weight)
+        init.orthogonal_(self.out_gate.weight)
+        init.constant_(self.reset_gate.bias, 0.)
+        init.constant_(self.update_gate.bias, 0.)
+        init.constant_(self.out_gate.bias, 0.)
 
     def forward(self, input_, prev_state):
 
@@ -43,9 +42,9 @@ class ConvGRUCell(nn.Module):
 
         # data size is [batch, channel, height, width]
         stacked_inputs = torch.cat([input_, prev_state], dim=1)
-        update = F.sigmoid(self.update_gate(stacked_inputs))
-        reset = F.sigmoid(self.reset_gate(stacked_inputs))
-        out_inputs = F.tanh(self.out_gate(torch.cat([input_, prev_state * reset], dim=1)))
+        update = torch.sigmoid(self.update_gate(stacked_inputs))
+        reset = torch.sigmoid(self.reset_gate(stacked_inputs))
+        out_inputs = torch.tanh(self.out_gate(torch.cat([input_, prev_state * reset], dim=1)))
         new_state = prev_state * (1 - update) + out_inputs * update
 
         return new_state

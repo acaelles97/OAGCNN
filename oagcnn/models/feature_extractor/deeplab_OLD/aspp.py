@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from oagcnn.models.feature_extractor.deeplab.sync_batchnorm.batchnorm import SynchronizedBatchNorm2d
+from oagcnn.models.feature_extractor.deeplab_OLD.sync_batchnorm.batchnorm import SynchronizedBatchNorm2d
 
 class _ASPPModule(nn.Module):
     def __init__(self, inplanes, planes, kernel_size, padding, dilation, BatchNorm):

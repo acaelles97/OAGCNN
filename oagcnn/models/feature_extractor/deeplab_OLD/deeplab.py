@@ -1,10 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from oagcnn.models.feature_extractor.deeplab.sync_batchnorm.batchnorm import SynchronizedBatchNorm2d
-from oagcnn.models.feature_extractor.deeplab.aspp import build_aspp
-from oagcnn.models.feature_extractor.deeplab.decoder import build_decoder
-from oagcnn.models.feature_extractor.deeplab import build_backbone
+from oagcnn.models.feature_extractor.deeplab_OLD.sync_batchnorm.batchnorm import SynchronizedBatchNorm2d
+from oagcnn.models.feature_extractor.deeplab_OLD.aspp import build_aspp
+from oagcnn.models.feature_extractor.deeplab_OLD.decoder import build_decoder
+from oagcnn.models.feature_extractor.deeplab_OLD.backbone import build_backbone
 
 """
 https://github.com/jfzhang95/pytorch-deeplab-xception/tree/master/modeling

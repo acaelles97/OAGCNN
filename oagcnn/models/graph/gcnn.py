@@ -18,30 +18,10 @@ class GCNN(nn.Module):
         # Graph k-message passing step arch
         self.gcnn_module = GCNNModuleFactory.create_by_name(cfg.GCNN.MODULE, self.input_channels)
 
+        self.mask
+
         # Arch to decode a mask for each of the individual nodes we have
         self.read_out_module = ReadOutModuleFactory.create_by_name(cfg.GCNN.READ_OUT, self.input_channels,  cfg.DATA.IMAGE_SIZE, cfg.GCNN.NUM_CLASSES)
-
-
-    # def forward(self, feats, objs_masks):
-    #     # feats (BATCH_SIZE, CH, H, W) -> frame from a clip
-    #     # obj_masks (BATCH_SIZE, NUM_OBJ, H, W)
-    #
-    #     # graph data structure (BATCH_SIZE, NUM_OBJ, CH, H, W)
-    #     # nodes_state List NUM_OBJ elements each: (BATCH_SIZE, CH, H, W) //
-    #     nodes_state = [torch.cat((feats, objs_masks[:, i, ...].unsqueeze(1)), dim=1) for i in range(self.num_nodes)]
-    #
-    #     for k in range(self.message_passing_steps):
-    #         new_states = [None for _ in range(self.num_nodes)]
-    #
-    #         for idx in range(self.num_nodes):
-    #             new_state = self.gcnn_module(nodes_state[:idx] + nodes_state[idx + 1:], nodes_state[idx])
-    #             new_states[idx] = new_state
-    #
-    #         nodes_state = new_states
-    #
-    #     out_masks = torch.cat([self.read_out_module(node_state) for node_state in nodes_state], dim=1)
-    #
-    #     return out_masks
 
     def get_parameters(self):
         return filter(lambda p: p.requires_grad, self.parameters())

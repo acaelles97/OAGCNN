@@ -1,15 +1,15 @@
 
 
 MODEL:
-  LOAD_CHECKPOINT: /mnt/gpid07/users/adria.caelles/output_dir/T02_GCNN-TRAINING/checkpoints/T02_GCNN-TRAINING_epoch_6.pth
+  LOAD_CHECKPOINT: /mnt/gpid07/users/adria.caelles/output_dir/old_but_not_good/T01.02_TEMPORAL_GRUGCNN/checkpoints/T01.02_TEMPORAL_GRUGCNN_epoch_14_BEST.pth
   RUNTIME_CONFIG:
     # Epoch at which the actions will be done
     FreezeRVOSEncoder: 0
     UnfreezeRVOSEncoder: -1
-    UsePreviousInferenceMask: 4
+    UsePreviousInferenceMask: 7
 
 OAGCNN:
-  MESSAGE_PASSING_STEPS: 5
+  MESSAGE_PASSING_STEPS: 4
   USE_TEMPORAL_FEATURES: True
   BACKPROPAGATE_FEATURES: True
   USE_PREVIOUS_INFERENCE_MASK: False
@@ -26,7 +26,7 @@ OAGCNN:
     GRAPH:
       MASK_ENCODING_MODULE: MaskCatEncoder
       # GCNNSimple, GCNNConvBlocks, GRUGCNN
-      GCNN_MODULE: AttentionGRUGCNN
+      GCNN_MODULE: GRUGCNN
       READ_OUT: ReadOutSimple
 
 
@@ -71,7 +71,7 @@ SOLVER:
   OPTIMIZER: Adam
   LR: 0.001
   WEIGHT_DECAY: 0.0001
-  NUM_EPOCHS: 11
+  NUM_EPOCHS: 20
   CHECKPOINTER:
     SAVE_ALWAYS: True
     PATIENCE: 5
@@ -79,7 +79,7 @@ SOLVER:
   USE_SCHEDULER: True
   LR_SCHEDULER:
     NAME: "MultiStepLR"
-    STEPS: [6, 8]
+    STEPS: [14, 17]
     STEP_SIZE: 0.1
   EVALUATION_METRIC: "loss"
   
@@ -94,6 +94,12 @@ DATASETS:
 
 
 GENERAL_CONFIG:
-  TRAIN_NAME: T05_FreezeEncoder_SmallFCN_AUGM
+  TRAIN_NAME: T01.02_TEMPORAL_GRUGCNN
   PRINT_EVERY: 5
   USE_GPU: True
+
+PREDICTOR:
+  USE_GPU: True
+  OVERLAY_MASKS: False
+  INSTANCE_RESULTS: False
+  PREPARE_SUBMISSION_RESULTS: True

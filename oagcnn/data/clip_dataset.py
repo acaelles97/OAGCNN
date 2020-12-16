@@ -11,7 +11,12 @@ class ClipDataset(data.Dataset):
         self.transform = transform
         self.max_num_gt_objects = max_num_gt_objects
         self.sequence_name = sequence_name
+        self.omitted_frames = None
+        self._init_max_num_instances()
         self.correct_clip()
+
+    def get_omitted_frames(self):
+        return self.omitted_frames
 
     def get_sequence_name(self):
         return self.sequence_name
@@ -19,17 +24,37 @@ class ClipDataset(data.Dataset):
     def get_frame_name(self, filename):
         return filename.split("/")[-1].split(".")[0]
 
+    def get_max_num_instances(self):
+        return self.max_num_instances
+
+    def _init_max_num_instances(self):
+        max_num_instances = 0
+        for instances_in_frame in list(self.clip_metadata.values()):
+            max_num_instances = max(max_num_instances, len(instances_in_frame))
+        self.max_num_instances = max_num_instances
+
     def correct_clip(self):
+
+        # First make sure both start at the first frame instances appears
         existing_frames = [self.get_frame_name(image_file) for image_file in self.clip_images_files]
+        existing_masks = [self.get_frame_name(annot_file) for annot_file in self.clip_annot_files]
 
-        idx_clip_start = existing_frames.index(sorted(list(self.clip_metadata.keys()))[0])
-        self.clip_images_files = self.clip_images_files[idx_clip_start:]
-        self.clip_annot_files = self.clip_annot_files[idx_clip_start:]
+        idx_clip_start_image = existing_frames.index(sorted(list(self.clip_metadata.keys()))[0])
+        idx_clip_start_mask = existing_masks.index(sorted(list(self.clip_metadata.keys()))[0])
 
+        # if idx_clip_start_image != 0:
+        #     self.omitted_frames = existing_frames[:idx_clip_start_image]
+
+        self.clip_images_files = self.clip_images_files[idx_clip_start_image:]
+        self.clip_annot_files = self.clip_annot_files[idx_clip_start_mask:]
+
+        # If len different we might have empty frames without any instance (should only occur at test time) and we want both to be same length
+        # and control when a new GT mask enters the scene, so we need to redo the list filling with None.
         if len(self.clip_images_files) != len(self.clip_annot_files):
-            new_clip_annot_files = []
+            existing_frames = [self.get_frame_name(image_file) for image_file in self.clip_images_files]
             existing_masks = [self.get_frame_name(annot_file) for annot_file in self.clip_annot_files]
 
+            new_clip_annot_files = []
             starting_frame_idx = existing_frames.index(existing_masks[0])
 
             for idx in range(starting_frame_idx, len(existing_frames)):
@@ -40,8 +65,8 @@ class ClipDataset(data.Dataset):
                 else:
                     new_clip_annot_files.append(None)
 
-            self.clip_images_files = self.clip_images_files[starting_frame_idx:]
             self.clip_annot_files = new_clip_annot_files
+
 
     def load_frame(self, image_file, annot_file):
         image = Image.open(image_file)
@@ -96,7 +121,6 @@ class ClipDataset(data.Dataset):
 
         frame_instances = self.clip_metadata.get(id_frame)
         if frame_instances is None:
-            print("OJO")
             return gt_objs_masks, valid_masks.squeeze(), categories
 
         total_num_instances = min(self.max_num_gt_objects, len(frame_instances))
@@ -125,6 +149,7 @@ class ClipDataset(data.Dataset):
     def load_annotations_for_test(self, frame_name, annot_file, height, width):
         if annot_file is None:
             gt_objs_masks, valid_masks, categories = self.generate_empty_masks(height, width)
+            valid_masks = valid_masks.squeeze()
 
         else:
             annotation = Image.open(annot_file)

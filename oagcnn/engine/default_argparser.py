@@ -4,12 +4,14 @@ def argument_parser():
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--config-file", default="", metavar="FILE", help="path to config file")
-    # parser.add_argument(
-    #     "--resume",
-    #     action="store_true",
-    #     help="Whether to attempt to resume from the checkpoint directory. "
-    #     "See documentation of `DefaultTrainer.resume_or_load()` for what it means.",
-    # )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Whether to attempt to resume from the checkpoint directory. "
+        "See documentation of `DefaultTrainer.resume_or_load()` for what it means.",
+    )
+    parser.add_argument("--checkpoint", default="")
+
     # parser.add_argument("--eval-only", action="store_true", help="perform evaluation only")
     # parser.add_argument("--num-gpus", type=int, default=1, help="number of gpus *per machine*")
     # parser.add_argument("--num-machines", type=int, default=1, help="total number of machines")
@@ -36,5 +38,7 @@ def argument_parser():
         nargs=argparse.REMAINDER,
     )
     args = parser.parse_args()
+    if args.resume:
+        assert args.checkpoint
 
     return args

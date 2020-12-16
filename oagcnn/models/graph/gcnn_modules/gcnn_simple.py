@@ -22,7 +22,9 @@ class GCNNSimple(nn.Module):
     def _sum_op(self, neighbour_states, self_state):
         return neighbour_states + self_state
 
-    def forward(self, neighbour_states, self_state):
+
+    def forward(self, neighbour_states, self_state, previous_state=None):
+
         if not neighbour_states:
             intra = self.self_loop_func(self_state)
             return self.update_func(intra)

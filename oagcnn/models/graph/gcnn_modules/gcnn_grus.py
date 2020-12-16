@@ -25,12 +25,17 @@ class GRUGCNN(nn.Module):
     def _cat_op(self, neighbour_states, self_state):
         return torch.cat((neighbour_states, self_state), dim=1)
 
-    def forward(self, neighbour_states, self_state):
+    def forward(self, neighbour_states, self_state, previous_state=None):
+        # No state to summit from previous frame
+        if previous_state is None:
+            previous_state = self_state
+        # We want to pass state but its first frame, so we put it None to be 0's by GRU module
+        elif not isinstance(previous_state, torch.Tensor):
+            previous_state = None
 
         if not neighbour_states:
             intra = self.self_loop_func(self_state)
-
-            return self.state_update(intra, self_state)
+            return self.state_update(intra, previous_state)
 
         inter = self.aggregation_op(neighbour_states)
         inter = self.aggregation_func(inter)
@@ -40,6 +45,6 @@ class GRUGCNN(nn.Module):
         inter_intra = self.update_op(inter, intra)
         inter_intra = self.update_func(inter_intra)
 
-        new_state = self.state_update(inter_intra, self_state)
+        new_state = self.state_update(inter_intra, previous_state)
 
         return new_state

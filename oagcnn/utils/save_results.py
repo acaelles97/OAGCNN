@@ -3,6 +3,7 @@ import torch
 import os
 import matplotlib.pyplot as plt
 from scipy.misc import imresize, toimage
+from PIL import Image
 
 
 def sequence_palette():
@@ -32,6 +33,11 @@ def sequence_palette():
                (224, 224, 192): 21}
 
     return palette
+
+
+
+PALETTE = [0, 0, 0, 128, 0, 0, 0, 128, 0, 128, 128, 0, 0, 0, 128, 128, 0, 128, 0, 128, 128, 128, 128, 128, 64, 0, 0, 191, 0, 0, 64, 128, 0, 191, 128, 0, 64, 0, 128]
+
 
 
 class SaveResults:
@@ -64,23 +70,31 @@ class SaveResults:
 
         return colors
 
-    def save_result(self, image, out_masks, frame_name, sequence_name):
-        height = image.shape[-2]
-        width = image.shape[-1]
-
+    def save_result(self, height, width, out_masks, frame_name, sequence_name, num_instances_clip, instances_id):
         num_masks = out_masks.shape[0]
+
         for t in range(num_masks):
             mask_pred = out_masks[t, ...]
             mask_pred = np.reshape(mask_pred, (height, width))
-            indxs_instance = np.where(mask_pred > 0.5)
+            mask_pred = mask_pred * 255
 
-            mask2assess = np.zeros((height, width))
-            mask2assess[indxs_instance] = 255
-            mask_save_path = os.path.join(self.output_path, frame_name + '_instance_{}.png'.format(t))
+            instance_id = instances_id[t] + 1
 
-            toimage(mask2assess, cmin=0, cmax=255).save(mask_save_path)
+            sub_folder = "instance_result/{}_instances".format(num_instances_clip)
+            out_folder = os.path.join(self.output_path, sub_folder)
+            if not os.path.exists(out_folder):
+                os.makedirs(out_folder, exist_ok=True)
 
-    def save_result_overlay(self, image, out_masks, frame_name, sequence_name):
+            output_path = os.path.join(out_folder, sequence_name[0])
+            if not os.path.exists(output_path):
+                os.makedirs(output_path, exist_ok=True)
+
+            filename = '{}_instance_{:02d}.png'.format(frame_name[0], instance_id)
+            full_path = os.path.join(output_path, filename)
+
+            toimage(mask_pred, cmin=0, cmax=255).save(full_path)
+
+    def save_result_overlay(self, image, out_masks, frame_name, sequence_name, num_instances_clip):
         # image = np.rollaxis(image, 2, 0)
         height = image.shape[0]
         width = image.shape[1]
@@ -102,10 +116,54 @@ class SaveResults:
                 tmp_img[:, :, i] = color_mask[i]
             ax.imshow(np.dstack((tmp_img, mask_pred * 0.7)))
 
-        out_folder = os.path.join(self.output_path, sequence_name[0])
+        sub_folder = "mask_overlay/{}_instances".format(num_instances_clip)
+        out_folder = os.path.join(self.output_path, sub_folder)
         if not os.path.exists(out_folder):
             os.makedirs(out_folder, exist_ok=True)
 
-        fig_name = os.path.join(out_folder, "{}.png".format(frame_name))
+        output_path = os.path.join(out_folder, sequence_name[0])
+        if not os.path.exists(output_path):
+            os.makedirs(output_path, exist_ok=True)
+
+        fig_name = os.path.join(output_path, "{}.png".format(frame_name[0]))
         plt.savefig(fig_name, bbox_inches='tight')
         plt.close()
+
+    def _save_submission_image(self, image, folder_name, sequence_name, frame_name):
+        res_im = Image.fromarray(image, mode="P")
+        res_im.putpalette(PALETTE)
+
+        out_folder = os.path.join(self.output_path, folder_name)
+        if not os.path.exists(out_folder):
+            os.makedirs(out_folder, exist_ok=True)
+
+        output_path = os.path.join(out_folder, sequence_name)
+        if not os.path.exists(output_path):
+            os.makedirs(output_path, exist_ok=True)
+
+        frame_path = os.path.join(output_path, "{}.png".format(frame_name))
+        res_im.save(frame_path)
+
+    def results_for_submission(self, height, width, out_masks, frame_name, sequence_name, instances_id):
+        # LOAD GT
+        # 1 compute area from out_masks
+        num_objs = out_masks.shape[0]
+        # First we print bigger areas
+        sorted_idx = np.argsort([-np.sum(out_masks[i, ...]) for i in range(num_objs)])
+        pred_mask_resized = np.zeros((height, width), dtype=np.uint8)
+
+        for idx in sorted_idx:
+            instance_id = instances_id[idx] + 1
+            pred_mask = out_masks[idx, ...]
+
+            pred_mask_resized_aux = imresize(pred_mask, (height, width), interp='nearest')
+            pred_mask_resized[pred_mask_resized_aux == 255] = instance_id
+
+        self._save_submission_image(pred_mask_resized, "submission_results", sequence_name[0], frame_name[0])
+
+    def empty_mask_for_submission(self, height, width, frames_names, sequence_name):
+        for frame_name in frames_names:
+            pred_mask = np.zeros((height, width), dtype=np.uint8)
+            self._save_submission_image(pred_mask, "submission_results", sequence_name[0], frame_name)
+
+

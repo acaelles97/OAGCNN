@@ -1,7 +1,7 @@
 import torch.nn as nn
 import math
 import torch.utils.model_zoo as model_zoo
-from oagcnn.models.feature_extractor.deeplab.sync_batchnorm.batchnorm import SynchronizedBatchNorm2d
+from oagcnn.models.feature_extractor.deeplab_OLD.sync_batchnorm.batchnorm import SynchronizedBatchNorm2d
 
 webroot = 'http://dl.yf.io/drn/'
 

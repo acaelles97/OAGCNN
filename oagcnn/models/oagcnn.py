@@ -1,10 +1,11 @@
 from oagcnn.models.feature_extractor.feature_extractor_factory import FeatureExtractorFactory
-from oagcnn.models.graph.gcnn import GCNN
+from oagcnn.models.graph.gcnn_temporal import GCNNTemporal
 import torch.nn as nn
 import torch
 from oagcnn.models.objectives.loss_objective_factory import LossFunctionFactory
 from oagcnn.solver.optimizer_factory import OptimizerFactory
 from .feature_extractor.rvos_feature_extractor.rvos_feature_extractor_module import RVOSFeatureExtractor
+from .feature_extractor.deeplab.custom_deeplab import DeepLabV3Plus
 from oagcnn.solver.lr_scheduler_factory import LrSchedulerFactory
 from GPUtil import showUtilization as gpu_usage
 
@@ -12,32 +13,32 @@ from GPUtil import showUtilization as gpu_usage
 class ActiveObjectsTracker:
     def __init__(self, device, mask_backpropagation):
         self.device = device
-        self.gt_masks = None
-        self.valid_targets = None
+        self.active_objs_masks = None
+        self.active_valid_targets = None
+        self.active_objs_features = None
         self.mask_backpropagation = mask_backpropagation
 
     def init_object_tracker(self, init_gt_masks, init_valid_masks):
         if self.mask_backpropagation:
-            self.gt_masks = init_gt_masks.to(self.device)
-            self.valid_targets = init_valid_masks.to(self.device)
+            self.active_objs_masks = init_gt_masks.to(self.device)
+            self.active_valid_targets = init_valid_masks.to(self.device)
         else:
-            self.gt_masks = init_gt_masks.to(self.device)
-            self.valid_targets = init_valid_masks.to(self.device)
-
+            self.active_objs_masks = init_gt_masks.to(self.device)
+            self.active_valid_targets = init_valid_masks.to(self.device)
 
     def update_active_objects(self, new_gt_masks, new_valid_targets):
-        objs_changes = torch.ne(self.valid_targets, new_valid_targets)
+        objs_changes = torch.ne(self.active_valid_targets, new_valid_targets)
         if objs_changes.any():
             # We just care about objects that are new (1st appearance) on the clip -> batched_valid_target == True and valid_masks_record
             # == False on the positions where there are changes
             new_appearance_ids = torch.bitwise_and(torch.bitwise_and(objs_changes, new_valid_targets),
-                                                   torch.bitwise_and(torch.logical_not(self.valid_targets), objs_changes))
+                                                   torch.bitwise_and(torch.logical_not(self.active_valid_targets), objs_changes))
             # Check if there is any appearance
             if new_appearance_ids.any():
-                # Set valid mask to True as from now one we will track this objects
-                self.valid_targets = torch.bitwise_or(self.valid_targets, new_appearance_ids)
-                # Give the model first GT mask for that appearance
-                self.gt_masks[new_appearance_ids] = new_gt_masks[new_appearance_ids]
+                self.active_valid_targets = torch.bitwise_or(self.active_valid_targets, new_appearance_ids)
+                mask_to_op = torch.zeros_like(self.active_objs_masks)
+                mask_to_op[new_appearance_ids, :, :] = 1
+                self.active_objs_masks = mask_to_op * new_gt_masks + self.active_objs_masks
 
     def update_masks(self, new_masks):
         if self.mask_backpropagation:
@@ -51,20 +52,20 @@ class OAGCNN(nn.Module):
     def __init__(self, cfg, device):
         super(OAGCNN, self).__init__()
         self.device = device
-        feature_extractor = cfg.MODEL.FEATURE_EXTRACTOR
+
+        self.use_previous_inference_mask = cfg.OAGCNN.USE_PREVIOUS_INFERENCE_MASK
+        self.mask_backpropagation = cfg.OAGCNN.BACKPROPAGATE_PREDICTED_MASKS
+        self.use_temporal_features = cfg.OAGCNN.USE_TEMPORAL_FEATURES
+        self.features_backpropagation = cfg.OAGCNN.BACKPROPAGATE_FEATURES
+
         image_spatial_res = cfg.DATA.IMAGE_SIZE
-        self.feature_extractor = FeatureExtractorFactory.create_feature_extractor(feature_extractor, cfg, image_spatial_res).to(self.device)
+        self.feature_extractor = FeatureExtractorFactory.create_feature_extractor(cfg.OAGCNN.ARCH.FEATURE_EXTRACTOR, cfg, image_spatial_res).to(
+            self.device)
 
         out_feats_dims = self.feature_extractor.out_channels
-        self.gcnn = GCNN(cfg, out_feats_dims).to(self.device)
+        self.gcnn = GCNNTemporal(cfg, self.use_temporal_features, out_feats_dims).to(self.device)
 
-        self.loss_objective = LossFunctionFactory.create_feature_extractor(cfg.GCNN.LOSS_FUNCTION).to(self.device)
-
-        # Check if we need to freeze anything when passing the desired parameters to the optimizer
-        # self._optimizer_feat_extract = OptimizerFactory.create_optimizer(self.feature_extractor.get_parameters(), cfg.SOLVER.OPTIMIZER,
-        #                                                                  cfg.SOLVER.LR, cfg.SOLVER.WEIGHT_DECAY)
-        # self._optimizer_gcnn = OptimizerFactory.create_optimizer(self.gcnn.get_parameters(), cfg.SOLVER.OPTIMIZER, cfg.SOLVER.LR,
-        #                                                          cfg.SOLVER.WEIGHT_DECAY)
+        self.loss_objective = LossFunctionFactory.create_feature_extractor(cfg.OAGCNN.LOSS_FUNCTION).to(self.device)
 
         self._global_optim = OptimizerFactory.create_optimizer(self.get_parameters_custom(), cfg.SOLVER.OPTIMIZER, cfg.SOLVER.LR,
                                                                cfg.SOLVER.WEIGHT_DECAY)
@@ -73,53 +74,33 @@ class OAGCNN(nn.Module):
         if cfg.SOLVER.USE_SCHEDULER:
             self._global_lr_scheduler = LrSchedulerFactory.create_lr_scheduler(self._global_optim, cfg.SOLVER.LR_SCHEDULER)
 
-        self.use_previous_inference_mask = cfg.GCNN.USE_PREVIOUS_INFERENCE_MASK
         self.runtime_actions = {int(epoch): action for action, epoch in cfg.MODEL.RUNTIME_CONFIG.items() if epoch >= 0}
 
         self.active_obj_masks = None
         self.active_valid_masks = None
-        self.mask_backpropagation = cfg.GCNN.BACKPROPAGATE_PREDICTED_MASKS
+        self.active_node_features = None
 
         # self.active_objects_tracker = ActiveObjectsTracker(self.device, cfg.GCNN.BACKPROPAGATE_PREDICTED_MASKS)
 
-    # def init_object_tracker(self, init_gt_masks, init_valid_masks):
-    #     if self.mask_backpropagation:
-    #         self.gt_masks = init_gt_masks.to(self.device)
-    #         self.valid_targets = init_valid_masks.to(self.device)
-    #     else:
-    #         self.gt_masks = init_gt_masks.to(self.device)
-    #         self.valid_targets = init_valid_masks.to(self.device)
+    def init_object_tracker(self, init_gt_masks, init_valid_masks):
+        self.active_obj_masks = init_gt_masks.to(self.device)
+        self.active_valid_masks = init_valid_masks.to(self.device)
+        self.active_node_features = None
 
-    def update_active_objects(self, active_objs_masks, active_valid_masks, new_gt_masks, new_valid_targets):
-        objs_changes = torch.ne(active_valid_masks, new_valid_targets)
+    def update_active_objects(self, new_gt_masks, new_valid_targets):
+        objs_changes = torch.ne(self.active_valid_masks, new_valid_targets)
         if objs_changes.any():
             # We just care about objects that are new (1st appearance) on the clip -> batched_valid_target == True and valid_masks_record
             # == False on the positions where there are changes
             new_appearance_ids = torch.bitwise_and(torch.bitwise_and(objs_changes, new_valid_targets),
-                                                   torch.bitwise_and(torch.logical_not(active_valid_masks), objs_changes))
+                                                   torch.bitwise_and(torch.logical_not(self.active_valid_masks), objs_changes))
             # Check if there is any appearance
             if new_appearance_ids.any():
                 # Set valid mask to True as from now one we will track this objects
-                new_valid_masks = torch.bitwise_or(active_valid_masks, new_appearance_ids)
-                mask_to_op = torch.zeros_like(active_objs_masks)
+                self.active_valid_masks = torch.bitwise_or(self.active_valid_masks, new_appearance_ids)
+                mask_to_op = torch.zeros_like(self.active_obj_masks)
                 mask_to_op[new_appearance_ids, :, :] = 1
-                new_objs_masks = mask_to_op * new_gt_masks + active_objs_masks
-
-                # Give the model first GT mask for that appearance
-                # active_objs_masks = new_gt_masks * new_appearance_ids + active_objs_masks * torch.logical_not(new_appearance_ids)
-                # active_objs_masks.clone()
-                # active_objs_masks[new_appearance_ids] = new_gt_masks[new_appearance_ids]
-
-                return new_objs_masks, new_valid_masks
-
-        return active_objs_masks,  active_valid_masks
-
-    def update_masks(self, new_masks):
-        if self.mask_backpropagation:
-            self.gt_masks = new_masks
-        else:
-            self.gt_masks = new_masks.detach()
-
+                self.active_obj_masks = mask_to_op * new_gt_masks + self.active_obj_masks
 
     def get_parameters_custom(self):
         return filter(lambda p: p.requires_grad, self.parameters())
@@ -127,46 +108,56 @@ class OAGCNN(nn.Module):
     def init_clip(self, init_gt_masks, init_valid_masks):
         self.active_objects_tracker.init_object_tracker(init_gt_masks, init_valid_masks)
 
-    def test_forward(self, batched_image, batched_gt_mask, batched_valid_target, active_objs_masks, active_valid_masks):
+    def inference(self, batched_image, batched_gt_mask, batched_valid_target):
         batched_image = batched_image.to(self.device)
         batched_gt_mask = batched_gt_mask.to(self.device)
         batched_valid_target = batched_valid_target.to(self.device)
 
-        active_objs_masks, active_valid_masks = self.update_active_objects(active_objs_masks, active_valid_masks, batched_gt_mask,
-                                                                           batched_valid_target)
+        self.update_active_objects(batched_gt_mask, batched_valid_target)
+
         feats = self.feature_extractor(batched_image)
         # (BATCH_SIZE, NUM_OBJ, H, W) -> Same order as given in objs masks so the relation is element to element
-        out_masks = self.gcnn(feats, active_objs_masks, active_valid_masks)
+        out_mask_logits, out_feats = self.gcnn(feats, self.active_obj_masks, self.active_valid_masks, self.active_node_features)
 
-        active_objs_masks = out_masks
+        self.active_obj_masks = out_mask_logits
+        self.active_node_features = out_feats
 
-        return out_masks, active_objs_masks, active_valid_masks
+        out_masks = torch.where(out_mask_logits > 0.5, 1.0, 0.0)
+        return out_masks
 
-    def forward(self, batched_image, batched_gt_mask, batched_valid_target, active_objs_masks, active_valid_masks):
-            batched_image = batched_image.to(self.device)
-            batched_gt_mask = batched_gt_mask.to(self.device)
-            batched_valid_target = batched_valid_target.to(self.device)
+    def forward(self, batched_image, batched_gt_mask, batched_valid_target):
+        batched_image = batched_image.to(self.device)
+        batched_gt_mask = batched_gt_mask.to(self.device)
+        batched_valid_target = batched_valid_target.to(self.device)
 
-            active_objs_masks, active_valid_masks = self.update_active_objects(active_objs_masks, active_valid_masks, batched_gt_mask, batched_valid_target)
+        self.update_active_objects(batched_gt_mask, batched_valid_target)
 
-            feats = self.feature_extractor(batched_image)
-            # (BATCH_SIZE, NUM_OBJ, H, W) -> Same order as given in objs masks so the relation is element to element
-            out_masks = self.gcnn(feats, active_objs_masks, active_valid_masks)
+        feats = self.feature_extractor(batched_image)
+        # (BATCH_SIZE, NUM_OBJ, H, W) -> Same order as given in objs masks so the relation is element to element
+        out_mask_logits, out_feats = self.gcnn(feats, self.active_obj_masks, self.active_valid_masks, self.active_node_features)
 
-            loss = self.compute_loss(batched_gt_mask, out_masks, batched_valid_target)
+        loss = self.compute_loss(batched_gt_mask, out_mask_logits, batched_valid_target)
 
-            if self.use_previous_inference_mask:
-                if self.mask_backpropagation:
-                    active_objs_masks = out_masks
-                else:
-                    active_objs_masks = out_masks.detach()
-
-                # We need to reset what contains only interested in data
-                # self.active_objects_tracker.update_masks(out_masks)
+        if self.use_previous_inference_mask:
+            if self.mask_backpropagation:
+                # out_masks = torch.where(out_mask_logits > 0.5, 1.0, 0.0)
+                # masking = (out_mask_logits > 0.5).float()
+                # out_masks = masking * torch.nn.functional.threshold(out_mask_logits, 0.5, 1.0) + torch.bitwise_not(masking) * out_mask_logits
+                self.active_obj_masks = out_mask_logits
             else:
-                active_objs_masks = batched_gt_mask
+                self.active_obj_masks = out_mask_logits.detach()
 
-            return out_masks, loss, active_objs_masks, active_valid_masks
+        # We need to reset what contains only interested in data
+        else:
+            self.active_obj_masks = batched_gt_mask
+
+        if self.use_temporal_features:
+            if self.features_backpropagation:
+                self.active_node_features = out_feats
+            else:
+                self.active_node_features = out_feats.detach()
+
+        return loss
 
     def optimizer_step(self, clip_loss):
         self._global_optim.zero_grad()
@@ -196,6 +187,18 @@ class OAGCNN(nn.Module):
         self.feature_extractor.load_state_dict(checkpoint["feature_extractor_state_dict"])
         self.gcnn.load_state_dict(checkpoint["gcnn_state_dict"])
 
+    def resume_training(self, state_dict, resume_epoch):
+        self.feature_extractor.load_state_dict(state_dict["feature_extractor_state_dict"])
+        self.gcnn.load_state_dict(state_dict["gcnn_state_dict"])
+        self._global_optim.load_state_dict(state_dict["opt_state_dict"])
+        actions = []
+        for epoch in sorted(self.runtime_actions.keys()):
+            if epoch > resume_epoch:
+                break
+            else:
+                actions.append(self._change_runtime_parameters(epoch))
+        return actions
+
     def _perform_lr_scheduler_step(self, epoch):
         if self._global_lr_scheduler is not None:
             self._global_lr_scheduler.step()
@@ -222,6 +225,11 @@ class OAGCNN(nn.Module):
         elif action == "UsePreviousInferenceMask":
             self.use_previous_inference_mask = True
 
+        elif action == "FreezeDeepLabV3Plus":
+            if not isinstance(self.feature_extractor, DeepLabV3Plus):
+                raise ValueError("Current feature extractor is not DeepLabV3Plus and action is {}".format(action))
+            self.feature_extractor.freeze_deeplab()
+
         return action
 
     def actions_after_epoch(self, epoch):
@@ -235,8 +243,3 @@ class OAGCNN(nn.Module):
         action_done.append(self._change_runtime_parameters(epoch=epoch))
         return action_done
 
-    def load_modules_state_dict(self, overall_state_dict, strict=True):
-        self.feature_extractor.load_state_dict(state_dict=overall_state_dict["feature_extractor_state_dict"], strict=strict)
-        self.gcnn.load_state_dict(state_dict=overall_state_dict["gcnn_state_dict"], strict=strict)
-        self._optimizer_feat_extract.load_state_dict(state_dict=overall_state_dict["feature_extractor_opt_state_dict"])
-        self._optimizer_gcnn.load_state_dict(state_dict=overall_state_dict["gcnn_opt_state_dict"])
