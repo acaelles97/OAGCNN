@@ -3,10 +3,10 @@ import torch.nn as nn
 import torch
 
 
-class GRUGCNN(nn.Module):
+class GRUGCNNNoAggregation(nn.Module):
 
     def __init__(self, input_channels):
-        super(GRUGCNN, self).__init__()
+        super(GRUGCNNNoAggregation, self).__init__()
         self.aggregation_op = self._max_op
         self.aggregation_func = nn.Conv2d(input_channels, input_channels, kernel_size=3, padding=1, bias=False)
         self.self_loop_func = nn.Conv2d(input_channels, input_channels, kernel_size=3, padding=1, bias=False)
@@ -33,18 +33,5 @@ class GRUGCNN(nn.Module):
         elif not isinstance(previous_state, torch.Tensor):
             previous_state = None
 
-        if not neighbour_states:
-            intra = self.self_loop_func(self_state)
-            return self.state_update(intra, previous_state)
-
-        inter = self.aggregation_op(neighbour_states)
-        inter = self.aggregation_func(inter)
-
         intra = self.self_loop_func(self_state)
-
-        inter_intra = self.update_op(inter, intra)
-        inter_intra = self.update_func(inter_intra)
-
-        new_state = self.state_update(inter_intra, previous_state)
-
-        return new_state
+        return self.state_update(intra, previous_state)

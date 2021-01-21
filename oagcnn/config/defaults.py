@@ -99,9 +99,10 @@ _C.RoIAlignEncoder.SPATIAL_SIZE = (14, 14)
 
 _C.ReadOutWithRefinement = CN()
 _C.ReadOutWithRefinement.INTERMEDIATE_CHANNELS = 32
-
+_C.ReadOutWithRefinement.OUT_NODE_FEATURES = 32
 _C.ReadOutSimple = CN()
 
+_C.GRUGCNNNoAggregation = CN()
 
 _C.RVOSFeatureExtractor = CN()
 _C.RVOSFeatureExtractor.RVOS_ENCODER = CN()

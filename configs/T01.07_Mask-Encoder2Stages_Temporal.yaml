@@ -22,7 +22,6 @@ OAGCNN:
   
   ARCH:
     FEATURE_EXTRACTOR: RVOSFeatureExtractor
-    
     GRAPH:
       MASK_ENCODING_MODULE: MaskEncoderTwoStages
       # GCNNSimple, GCNNConvBlocks, GRUGCNN
@@ -57,7 +56,7 @@ RVOSFeatureExtractor:
     OUT_CHANNELS: 32
 
 DATA:
-  NUM_WORKERS: 0
+  NUM_WORKERS: 5
   SHUFFLE: True
   DROP_LAST: True
   BATCH_SIZE: 4

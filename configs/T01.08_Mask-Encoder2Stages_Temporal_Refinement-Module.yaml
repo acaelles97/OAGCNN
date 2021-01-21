@@ -36,6 +36,11 @@ MaskEncoderTwoStages:
   DROPOUT: 0.2
   USE_SKIP_MASK_CONNECTION: True
 
+ReadOutWithRefinement:
+  INTERMEDIATE_CHANNELS: 32
+  OUT_NODE_FEATURES: 32
+
+
 RVOSFeatureExtractor:
   RVOS_ENCODER:
     BACKBONE: ResNet101
@@ -57,7 +62,7 @@ RVOSFeatureExtractor:
     OUT_CHANNELS: 32
 
 DATA:
-  NUM_WORKERS: 0
+  NUM_WORKERS: 5
   SHUFFLE: True
   DROP_LAST: True
   BATCH_SIZE: 4

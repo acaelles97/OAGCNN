@@ -31,10 +31,11 @@ def extract_bboxes(mask: torch.Tensor, dilate=0):
 
 
 class RoIAlignEncoder:
-    def __init__(self, input_channels, params=None):
+    def __init__(self, input_channels, cfg):
         self.out_channels = input_channels
-        self.dilate = params["DILATE"]
-        self.spatial_size = params["SPATIAL_SIZE"]
+
+        self.dilate = cfg.RoIAlignEncoder.DILATE
+        self.spatial_size = cfg.RoIAlignEncoder.SPATIAL_SIZE
 
     def __call__(self, feats, masks_to_concat, num_obj):
         out_instace_features = []

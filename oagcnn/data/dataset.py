@@ -14,6 +14,10 @@ class MVOSDataset(data.Dataset):
                  metadata,
                  is_train,
                  cfg):
+        # TODO Configurable parameters
+
+        # TODO Parameters to be set by the child
+        self.images_dir = None
 
         self.images_dir = images_dir
         self.annotations_dir = annotations_dir

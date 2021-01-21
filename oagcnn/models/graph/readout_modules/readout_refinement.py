@@ -2,6 +2,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 
+
 class ResBlock(nn.Module):
     def __init__(self, indim, outdim=None, stride=1):
         super(ResBlock, self).__init__()
@@ -30,7 +31,7 @@ class Refine(nn.Module):
         super(Refine, self).__init__()
         self.convFS = nn.Conv2d(inplanes, planes, kernel_size=(3, 3), padding=(1, 1), stride=1)
         self.ResFS = ResBlock(planes, planes)
-        self.ResMM = ResBlock(planes, planes)a
+        self.ResMM = ResBlock(planes, planes)
         self.scale_factor = scale_factor
 
     def forward(self, f, pm):
@@ -42,25 +43,32 @@ class Refine(nn.Module):
 
 
 class ReadOutWithRefinement(nn.Module):
-    def __init__(self, input_channels_feats, input_channels_graph, original_img_size, config):
+    def __init__(self, input_channels_feats, input_channels_graph, cfg):
         super(ReadOutWithRefinement, self).__init__()
-        self.original_img_size = original_img_size
-        self.prediction_resolution = (original_img_size[0]/2, original_img_size[1]/2)
-        self.refinement_bloc1 = ResBlock(input_channels_feats + input_channels_graph, config["INTERMEDIATE_CHANNELS"])
+        # Config parameters
+        original_img_size = cfg.DATA.IMAGE_SIZE
+        int_channels = cfg.ReadOutWithRefinement.INTERMEDIATE_CHANNELS
+        out_node_features = cfg.ReadOutWithRefinement.OUT_NODE_FEATURES
+        # Prediction resolution scale
+        self.prediction_resolution = (int(original_img_size[0] / 2), int(original_img_size[1] / 2))
 
-        self.main_classifier = nn.Conv2d(config["INTERMEDIATE_CHANNELS"], 1, kernel_size=1, padding=(1, 1), stride=1)
+        # Learnable parameters
+        # Refinement block applied to each node output features in order to scale it x2 thus being same resolution as the image features tensor
+        self.refinement_bloc1 = ResBlock(input_channels_graph, out_node_features)
+        # Refinement block applied to the concatenation of image feature and refined node output features
+        self.refinement_bloc2 = ResBlock(input_channels_feats + out_node_features, int_channels)
+        # Final conv classifier layer
+        self.main_classifier = nn.Conv2d(int_channels, 1, kernel_size=1, padding=(1, 1), stride=1)
         self.softmax = nn.Sigmoid()
 
-
     def forward(self, image_feats, node_out):
-        upsampled_node_out = F.interpolate(node_out, size=feats.shape[-2:], mode='bilinear', align_corners=False)
-        node_feats = torch.cat((image_feats, upsampled_node_out), dim=1)
-        node_feats = self.refinement_bloc(node_feats)
+        node_out = self.refinement_bloc1(node_out)
+        upsampled_node_out = F.interpolate(node_out, size=image_feats.shape[-2:], mode='bilinear', align_corners=False)
+        node_feats = torch.cat((image_feats.unsqueeze(0), upsampled_node_out), dim=1)
+        node_feats = self.refinement_bloc2(node_feats)
         node_feats = F.interpolate(node_feats, size=self.prediction_resolution, mode='bilinear', align_corners=False)
         out_feats = self.main_classifier(node_feats)
         out_logits = F.interpolate(out_feats, size=self.original_img_size, mode='bilinear', align_corners=False)
         out_probabilities = self.softmax(out_logits)
 
         return out_probabilities
-
-

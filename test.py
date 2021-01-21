@@ -2,11 +2,13 @@ from oagcnn.config.defaults import cfg
 from oagcnn.models.oagcnn import OAGCNN
 from oagcnn.engine import Trainer, argument_parser
 from oagcnn.engine.evaluation import Evaluator
+import torch
 
 def test(model_path):
     device = "cuda" if cfg.GENERAL_CONFIG.USE_GPU else "cpu"
     model = OAGCNN(cfg, device)
-    model.custom_load_state_dict(model_path)
+    model_weights = torch.load(model_path)
+    model.custom_load_state_dict(model_weights)
 
     evaluator = Evaluator(cfg, model, device)
     val_loss = evaluator.validate(0)

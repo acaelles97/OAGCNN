@@ -15,6 +15,7 @@ def get_color_map():
         3: "black",
         4: "magenta",
         5: "cyan"
+
     }
 
 
@@ -69,7 +70,7 @@ def loss_from_log_file(path_to_log):
 
 
 def load_losses(path_to_pth):
-    saved_training = torch.load(path_to_pth)
+    saved_training = torch.load(path_to_pth, map_location=torch.device('cpu'))
     return saved_training["train_loss"], saved_training["val_loss"]
 
 
@@ -187,8 +188,12 @@ def plot_training_loss_per_epoch(training_loss, out_path):
     plt.savefig(out_path)
 
 def get_smoothed_training_loss(training_loss, partitions=20):
+    training_loss_values = list(training_loss.values())
+    num_elems = len(training_loss[0])
+    # if num_elems != 3643:
+    #      partitions = int(3643/num_elems * partitions)
 
-    step = int(len(list(training_loss.values())[0]) / partitions)
+    step = int(len(training_loss_values[0]) / partitions)
     averaged_loss = []
 
     for epoch in training_loss.keys():
@@ -211,19 +216,32 @@ def get_average_val_loss(validation_loss, partitions):
     return total_mean_loss
 
 
-def prepare_losses_dict(models_to_read):
+def prepare_losses_dict(models_to_read, num_epochs):
     losses_dict = {}
-    num_epochs = None
     for model in models_to_read:
         name = ".".join(model.split("/")[-1].split(".")[:-1])
 
         train_loss, val_loss = load_losses(model)
+
         if num_epochs is None:
             num_epochs = len(train_loss.keys())
 
+        updated_loss_train_dict = {}
+        updated_loss_val_dict = {}
+        for epoch in range(num_epochs):
+            if epoch not in train_loss.keys():
+                updated_loss_train_dict[epoch] = []
+            else:
+                updated_loss_train_dict[epoch] = train_loss[epoch]
+
+            if epoch not in val_loss.keys():
+                updated_loss_val_dict[epoch] = []
+            else:
+                updated_loss_val_dict[epoch] = val_loss[epoch]
+
         losses_dict[name] = {}
-        losses_dict[name]["training_loss"] = train_loss
-        losses_dict[name]["validation_loss"] = val_loss
+        losses_dict[name]["training_loss"] = updated_loss_train_dict
+        losses_dict[name]["validation_loss"] = updated_loss_val_dict
 
     return losses_dict, num_epochs
 
@@ -245,7 +263,6 @@ def get_train_val_values(losses, partitions, num_epochs, out_path):
 
         smoothed_training_loss = get_smoothed_training_loss(training_loss, partitions)
         mean_val_loss = get_average_val_loss(validation_loss, partitions)
-
         ax.plot(x_coordinates, np.array(smoothed_training_loss), label='Training_loss: {}'.format(model), color=color_map[idx])
         ax.plot(x_coordinates, np.array(mean_val_loss), label='Validation_loss: {}'.format(model), color=color_map[idx])
         patches.append(mpatches.Patch(color=color_map[idx], label=model))
@@ -274,5 +291,5 @@ if __name__ == "__main__":
     # plot_validation_loss(loaded_validation_loss, args.out_path)
     # plot_validation_loss_per_pieces(loaded_validation_loss, args.out_path)
 
-    losses_dict, num_epochs = prepare_losses_dict(args.model_path)
-    get_train_val_values(losses_dict, 25, num_epochs, args.out_path)
+    losses_dict, num_epochs = prepare_losses_dict(args.model_path, num_epochs=20)
+    get_train_val_values(losses_dict, 30, num_epochs, args.out_path)

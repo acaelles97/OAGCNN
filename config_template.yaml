@@ -1,18 +1,20 @@
 
-
+# Config parameters to run an experiment.
+# All the possible config parameters can be checked on oagcnn/config/default.py
 MODEL:
   LOAD_CHECKPOINT: /mnt/gpid07/users/adria.caelles/output_dir/T02_GCNN-TRAINING/checkpoints/T02_GCNN-TRAINING_epoch_6.pth
+  # Actions that can be done during training time in a specific epoch
   RUNTIME_CONFIG:
     # Epoch at which the actions will be done
     FreezeRVOSEncoder: 0
     UnfreezeRVOSEncoder: -1
-    UsePreviousInferenceMask: -1
+    UsePreviousInferenceMask: 4
 
 OAGCNN:
-  MESSAGE_PASSING_STEPS: 4
-  USE_TEMPORAL_FEATURES: False
-  BACKPROPAGATE_FEATURES: False
-  USE_PREVIOUS_INFERENCE_MASK: True
+  MESSAGE_PASSING_STEPS: 5
+  USE_TEMPORAL_FEATURES: True
+  BACKPROPAGATE_FEATURES: True
+  USE_PREVIOUS_INFERENCE_MASK: False
   # Whether to backpropagate gradients through the predicted mask or use just the mask itself (data)
   # Keeping gradient will increase memory usage
   BACKPROPAGATE_PREDICTED_MASKS: True
@@ -20,16 +22,22 @@ OAGCNN:
   # MaskedNLLLoss, MaskedBCELoss, SoftIoULoss
   LOSS_FUNCTION: SoftIoULoss
   
+  # Parameters to build the architecture
   ARCH:
+    # Available Feature extractors: DeepLabV3Plus RVOSFeatureExtractor
     FEATURE_EXTRACTOR: RVOSFeatureExtractor
     
     GRAPH:
+      # Available Mask Encoders: MaskCatEncoder MaskEncoderOneStage MaskEncoderTwoStages
       MASK_ENCODING_MODULE: MaskCatEncoder
-      # GCNNSimple, GCNNConvBlocks, GRUGCNN
-      GCNN_MODULE: GCNNSimple
+      # Available Graph Modules: GCNNSimple, GCNNConvBlocks, GRUGCNN, AttentionGRUGCNN
+      GCNN_MODULE: GRUGCNN
+      # Available ReadOut Modules: ReadOutSimple ReadOutWithRefinement
       READ_OUT: ReadOutSimple
 
-
+# Parameters to build previous architectures
+# Only those that refer to modules used (specified above) will be taken into account
+# Ones not mentioned do not have any configurable parameter
 RVOSFeatureExtractor:
   RVOS_ENCODER:
     BACKBONE: ResNet101
@@ -49,6 +57,32 @@ RVOSFeatureExtractor:
     HIDDEN_SIZE: 32
     DROPOUT: 0.25
     OUT_CHANNELS: 8
+
+
+DeepLabV3PlusFeatExtract:
+  BACKBONE_NAME: resnet50
+  OUTPUT_STRIDE: 8
+  OUT_CHANNELS: 8
+  LOAD_PRETRAINED: True
+  WEIGHTS_PAT: "/mnt/gpid07/users/adria.caelles/pre-trained_models/custom_weights_deeplabv3plus_resnet50_voc_os16.pth"
+
+MaskEncoderOneStage:
+  OUT_CHANNELS: 16
+
+MaskEncoderTwoStages:
+	INT_CHANNELS: 64
+	OUT_CHANNELS: 128
+	DROPOUT: 0.2
+	USE_SKIP_MASK_CONNECTION: False
+	
+RoIAlignEncoder:
+	DILATE: 3
+	SPATIAL_SIZE: (14, 14)
+
+ReadOutWithRefinement:
+	INTERMEDIATE_CHANNELS: 32
+	OUT_NODE_FEATURES: 32
+
 
 DATA:
   NUM_WORKERS: 5
@@ -71,15 +105,15 @@ SOLVER:
   OPTIMIZER: Adam
   LR: 0.001
   WEIGHT_DECAY: 0.0001
-  NUM_EPOCHS: 20
+  NUM_EPOCHS: 11
   CHECKPOINTER:
     SAVE_ALWAYS: True
-    PATIENCE: 10
+    PATIENCE: 5
     PATIENCE_DELTA: 0.
   USE_SCHEDULER: True
   LR_SCHEDULER:
     NAME: "MultiStepLR"
-    STEPS: [14, 17]
+    STEPS: [6, 8]
     STEP_SIZE: 0.1
   EVALUATION_METRIC: "loss"
   
@@ -94,6 +128,6 @@ DATASETS:
 
 
 GENERAL_CONFIG:
-  TRAIN_NAME: T01.00_SIMPLE-BASELINE
+  TRAIN_NAME: T05_FreezeEncoder_SmallFCN_AUGM
   PRINT_EVERY: 5
   USE_GPU: True

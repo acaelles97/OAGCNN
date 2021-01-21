@@ -10,6 +10,12 @@ def argument_parser():
         help="Whether to attempt to resume from the checkpoint directory. "
         "See documentation of `DefaultTrainer.resume_or_load()` for what it means.",
     )
+    parser.add_argument(
+        "--finetune",
+        action="store_true",
+        help="Whether to attempt to resume from the checkpoint directory. "
+        "See documentation of `DefaultTrainer.resume_or_load()` for what it means.",
+    )
     parser.add_argument("--checkpoint", default="")
 
     # parser.add_argument("--eval-only", action="store_true", help="perform evaluation only")
@@ -40,5 +46,10 @@ def argument_parser():
     args = parser.parse_args()
     if args.resume:
         assert args.checkpoint
+        assert not args.finetune
+
+    if args.finetune:
+        assert args.checkpoint
+        assert not args.resume
 
     return args

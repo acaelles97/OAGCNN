@@ -5,23 +5,22 @@ from .graph_modules_factory import MaskEncoderModuleFactory, ReadOutModuleFactor
 
 class GCNNTemporal(nn.Module):
 
-    def __init__(self, cfg, use_temporal_features, input_channels):
+    def __init__(self, cfg, input_channels):
         super(GCNNTemporal, self).__init__()
+
         self.message_passing_steps = cfg.OAGCNN.MESSAGE_PASSING_STEPS
-        self.use_temporal_features = use_temporal_features
+        self.use_temporal_features = cfg.OAGCNN.USE_TEMPORAL_FEATURES
 
         # HEAD_OUT_CHANNELS + 1 from concatenated mask
         self.input_channels = input_channels
 
-        mask_encoder_module = cfg.OAGCNN.ARCH.GRAPH.MASK_ENCODING_MODULE
-        self.mask_encoder = MaskEncoderModuleFactory.create_by_name(mask_encoder_module, self.input_channels, cfg[mask_encoder_module])
+        self.mask_encoder = MaskEncoderModuleFactory.create_by_name(cfg.OAGCNN.ARCH.GRAPH.MASK_ENCODING_MODULE, self.input_channels, cfg)
 
         # Graph k-message passing step arch
         self.gcnn_module = GCNNModuleFactory.create_by_name(cfg.OAGCNN.ARCH.GRAPH.GCNN_MODULE, self.mask_encoder.out_channels)
 
         # Arch to decode a mask for each of the individual nodes we have
-        read_out_module = cfg.OAGCNN.ARCH.GRAPH.READ_OUT
-        self.read_out_module = ReadOutModuleFactory.create_by_name(read_out_module, self.input_channels, self.mask_encoder.out_channels,  cfg.DATA.IMAGE_SIZE, cfg[read_out_module])
+        self.read_out_module = ReadOutModuleFactory.create_by_name(cfg.OAGCNN.ARCH.GRAPH.READ_OUT, self.input_channels, self.mask_encoder.out_channels)
 
     def get_parameters(self):
         return filter(lambda p: p.requires_grad, self.parameters())

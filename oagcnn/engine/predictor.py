@@ -8,7 +8,8 @@ import numpy as np
 class OAGCNNPredictor:
     def __init__(self, cfg, device, model: OAGCNN):
         self.model = model
-        self.model.custom_load_state_dict(cfg.MODEL.LOAD_CHECKPOINT)
+
+        self.model.custom_load_state_dict(torch.load(cfg.MODEL.LOAD_CHECKPOINT))
         self.device = device
 
         self.test_dataloaders = DatasetFactory.create_data_loader(cfg.DATASETS.TEST, cfg.DATASETS.TEST_SPLIT, cfg)

@@ -44,15 +44,21 @@ class Trainer:
         model_state_dict.update({"val_loss": self.evaluator.get_loss()})
         torch.save(model_state_dict, output_path)
 
-    def resume_training(self, checkpoint_path):
+    def resume_or_finetune_training(self, checkpoint_path, resume):
         model_state_dict = torch.load(checkpoint_path)
-        self.epoch = model_state_dict["epoch"] + 1
-        self.loss_container.load_loss_container(model_state_dict["train_loss"])
-        self.evaluator.load_state_dict(model_state_dict)
-        actions_done = self.model.resume_training(model_state_dict, self.epoch)
-        if actions_done:
-            for action in actions_done:
-                self.logger.info("Action done before epoch {}: Action: {}".format(self.epoch, action))
+        if resume:
+            self.logger.info("Resume training, loading checkpoint: {}".format(checkpoint_path))
+            self.epoch = model_state_dict["epoch"] + 1
+            self.loss_container.load_loss_container(model_state_dict["train_loss"])
+            self.evaluator.load_state_dict(model_state_dict)
+            actions_done = self.model.resume_training(model_state_dict, self.epoch)
+
+            if actions_done:
+                for action in actions_done:
+                    self.logger.info("Action done before epoch {}: Action: {}".format(self.epoch, action))
+        else:
+            self.logger.info("Finetune training, loading model weights from: {}".format(checkpoint_path))
+            self.model.custom_load_state_dict(model_state_dict)
 
         self.train()
 

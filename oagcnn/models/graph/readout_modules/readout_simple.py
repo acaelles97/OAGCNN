@@ -10,6 +10,7 @@ class ReadOutSimple(nn.Module):
         # input_channels = input_channels * 2
         self.original_img_size = original_img_size
         self.conv1 = nn.Conv2d(input_channels_graph, input_channels_graph, kernel_size=3, padding=1, bias=False)
+        #TODO: Using BN with batch size 1!
         self.bn1 = nn.BatchNorm2d(input_channels_graph)
         self.relu = nn.ReLU()
         self.main_classifier1 = nn.Conv2d(input_channels_graph, 1, kernel_size=1, bias=True)

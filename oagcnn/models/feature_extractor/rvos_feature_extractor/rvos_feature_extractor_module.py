@@ -15,13 +15,14 @@ class RVOSEncoder(nn.Module):
         super(RVOSEncoder, self).__init__()
 
         backbone_name = cfg.RVOSFeatureExtractor.RVOS_ENCODER.BACKBONE
-        self.base = BackboneFactory.create_backbone(backbone_name)
-        skip_dims_in = self.base.skip_dims_in
-
-        hidden_size = int(cfg.RVOSFeatureExtractor.RVOS_ENCODER.HIDDEN_SIZE)
-        self.hidden_size_dims = [hidden_size, hidden_size, int(hidden_size / 2), int(hidden_size / 4)]
-
         self.kernel_size = cfg.RVOSFeatureExtractor.RVOS_ENCODER.KERNEL_SIZE
+        hidden_size = int(cfg.RVOSFeatureExtractor.RVOS_ENCODER.HIDDEN_SIZE)
+        load_rvos_encoder = cfg.RVOSFeatureExtractor.RVOS_ENCODER.LOAD_PRETRAINED
+
+        self.base = BackboneFactory.create_backbone(backbone_name)
+
+        skip_dims_in = self.base.skip_dims_in
+        self.hidden_size_dims = [hidden_size, hidden_size, int(hidden_size / 2), int(hidden_size / 4)]
         self.padding = 0 if self.kernel_size == 1 else 1
 
         self.sk5 = nn.Conv2d(skip_dims_in[0], self.hidden_size_dims[0], self.kernel_size, padding=self.padding)
@@ -34,7 +35,7 @@ class RVOSEncoder(nn.Module):
         self.bn3 = nn.BatchNorm2d(self.hidden_size_dims[2])
         self.bn2 = nn.BatchNorm2d(self.hidden_size_dims[3])
 
-        if cfg.RVOSFeatureExtractor.RVOS_ENCODER.LOAD_PRETRAINED:
+        if load_rvos_encoder:
             assert backbone_name == "ResNet101" and self.hidden_size_dims[0] == 128, "Pretrained RVOS parameters are from ResNet101, check " \
                                                                                      "your backbone! "
             self.load_from_rvos(cfg)
@@ -74,17 +75,14 @@ class RVOSEncoderAdapter(nn.Module):
     def __init__(self, cfg, input_channels, out_spatial_size):
         super(RVOSEncoderAdapter, self).__init__()
 
-        self.in_connections = ["x5", "x4", "x3", "x2"]
-
-        self.input_channels = input_channels
-
         self.used_connections = cfg.RVOSFeatureExtractor.RVOS_ADAPTER.USED_FEATURES
+        self.channel_factor = cfg.RVOSFeatureExtractor.RVOS_ADAPTER.CHANNELS_FACTOR_REDUCTION
 
+        self.in_connections = ["x5", "x4", "x3", "x2"]
+        self.input_channels = input_channels
         self.interpolate_layer = InterpolateLayer(out_spatial_size)
 
         self._init_channels_dims()
-
-        self.channel_factor = cfg.RVOSFeatureExtractor.RVOS_ADAPTER.CHANNELS_FACTOR_REDUCTION
 
         if self.channel_factor != 0:
             reduced_channels = [int(channel_dim / self.channel_factor) for channel_dim in self.intermediate_channel_dims]
@@ -136,6 +134,7 @@ class RVOSEncoderHead(nn.Module):
 
         hidden_size = cfg.RVOSFeatureExtractor.RVOS_HEAD.HIDDEN_SIZE
         dropout = cfg.RVOSFeatureExtractor.RVOS_HEAD.DROPOUT
+
         self.conv1 = nn.Conv2d(input_channels, hidden_size, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(hidden_size)
         self.relu1 = nn.ReLU()
@@ -159,17 +158,18 @@ class RVOSEncoderHead(nn.Module):
 
 
 class RVOSFeatureExtractor(nn.Module):
-    def __init__(self, cfg, input_dims):
+    def __init__(self, cfg):
         super(RVOSFeatureExtractor, self).__init__()
 
+        # Configuration attributes
+        input_dims = cfg.DATA.IMAGE_SIZE
         out_spatial_ratio = cfg.RVOSFeatureExtractor.RVOS_ADAPTER.SPATIAL_SCALE_FACTOR
         self.out_spatial_res = (int(input_dims[0] / out_spatial_ratio), int(input_dims[1] / out_spatial_ratio))
         self.out_channels = cfg.RVOSFeatureExtractor.RVOS_HEAD.OUT_CHANNELS
 
+        # Learnable parameters
         self.encoder = RVOSEncoder(cfg)
-
         self.adapter = RVOSEncoderAdapter(cfg, self.encoder.hidden_size_dims, self.out_spatial_res)
-
         head_input_channels = sum(self.adapter.intermediate_channel_dims)
         self.out_head = RVOSEncoderHead(cfg, head_input_channels, self.out_channels)
 

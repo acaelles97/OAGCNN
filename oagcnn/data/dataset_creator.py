@@ -8,6 +8,7 @@ class DatasetFactory:
     def __init__(self):
         pass
 
+    # TODO Convert to the other factory type
     @staticmethod
     def _create_dataset(name, split, cfg):
         if name == "Davis":

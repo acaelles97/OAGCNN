@@ -53,34 +53,42 @@ class OAGCNN(nn.Module):
         super(OAGCNN, self).__init__()
         self.device = device
 
+        # Configuration attributes
         self.use_previous_inference_mask = cfg.OAGCNN.USE_PREVIOUS_INFERENCE_MASK
         self.mask_backpropagation = cfg.OAGCNN.BACKPROPAGATE_PREDICTED_MASKS
         self.use_temporal_features = cfg.OAGCNN.USE_TEMPORAL_FEATURES
         self.features_backpropagation = cfg.OAGCNN.BACKPROPAGATE_FEATURES
 
-        image_spatial_res = cfg.DATA.IMAGE_SIZE
-        self.feature_extractor = FeatureExtractorFactory.create_feature_extractor(cfg.OAGCNN.ARCH.FEATURE_EXTRACTOR, cfg, image_spatial_res).to(
-            self.device)
+        # Learnable parameters
+        self.feature_extractor = FeatureExtractorFactory.create_feature_extractor(cfg.OAGCNN.ARCH.FEATURE_EXTRACTOR, cfg).to(self.device)
+        self.gcnn = GCNNTemporal(cfg, self.feature_extractor.out_channels).to(self.device)
 
-        out_feats_dims = self.feature_extractor.out_channels
-        self.gcnn = GCNNTemporal(cfg, self.use_temporal_features, out_feats_dims).to(self.device)
-
+        # Optimization
         self.loss_objective = LossFunctionFactory.create_feature_extractor(cfg.OAGCNN.LOSS_FUNCTION).to(self.device)
 
-        self._global_optim = OptimizerFactory.create_optimizer(self.get_parameters_custom(), cfg.SOLVER.OPTIMIZER, cfg.SOLVER.LR,
-                                                               cfg.SOLVER.WEIGHT_DECAY)
+        self._global_optim = OptimizerFactory.create_optimizer(self.get_parameters_custom(), cfg)
 
         self._global_lr_scheduler = None
         if cfg.SOLVER.USE_SCHEDULER:
             self._global_lr_scheduler = LrSchedulerFactory.create_lr_scheduler(self._global_optim, cfg.SOLVER.LR_SCHEDULER)
 
-        self.runtime_actions = {int(epoch): action for action, epoch in cfg.MODEL.RUNTIME_CONFIG.items() if epoch >= 0}
+        self._init_runtime_actions(cfg)
 
         self.active_obj_masks = None
         self.active_valid_masks = None
         self.active_node_features = None
 
-        # self.active_objects_tracker = ActiveObjectsTracker(self.device, cfg.GCNN.BACKPROPAGATE_PREDICTED_MASKS)
+    def _init_runtime_actions(self, cfg):
+        actions = {}
+        for action, epoch in cfg.MODEL.RUNTIME_CONFIG.items():
+            _epoch = int(epoch)
+            if  _epoch == -1:
+                continue
+            if _epoch not in actions:
+                actions[_epoch] = []
+            actions[_epoch].append(action)
+
+        self.runtime_actions = actions
 
     def init_object_tracker(self, init_gt_masks, init_valid_masks):
         self.active_obj_masks = init_gt_masks.to(self.device)
@@ -140,9 +148,6 @@ class OAGCNN(nn.Module):
 
         if self.use_previous_inference_mask:
             if self.mask_backpropagation:
-                # out_masks = torch.where(out_mask_logits > 0.5, 1.0, 0.0)
-                # masking = (out_mask_logits > 0.5).float()
-                # out_masks = masking * torch.nn.functional.threshold(out_mask_logits, 0.5, 1.0) + torch.bitwise_not(masking) * out_mask_logits
                 self.active_obj_masks = out_mask_logits
             else:
                 self.active_obj_masks = out_mask_logits.detach()
@@ -182,21 +187,20 @@ class OAGCNN(nn.Module):
             "opt_state_dict": self._global_optim.state_dict(),
         }
 
-    def custom_load_state_dict(self, checkpoint_path):
-        checkpoint = torch.load(checkpoint_path)
-        self.feature_extractor.load_state_dict(checkpoint["feature_extractor_state_dict"])
-        self.gcnn.load_state_dict(checkpoint["gcnn_state_dict"])
+    def custom_load_state_dict(self, model_weights):
+        self.feature_extractor.load_state_dict(model_weights["feature_extractor_state_dict"])
+        self.gcnn.load_state_dict(model_weights["gcnn_state_dict"])
 
     def resume_training(self, state_dict, resume_epoch):
-        self.feature_extractor.load_state_dict(state_dict["feature_extractor_state_dict"])
-        self.gcnn.load_state_dict(state_dict["gcnn_state_dict"])
+        self.custom_load_state_dict(state_dict)
         self._global_optim.load_state_dict(state_dict["opt_state_dict"])
+
         actions = []
         for epoch in sorted(self.runtime_actions.keys()):
             if epoch > resume_epoch:
                 break
             else:
-                actions.append(self._change_runtime_parameters(epoch))
+                actions.extend(self._change_runtime_parameters(epoch))
         return actions
 
     def _perform_lr_scheduler_step(self, epoch):
@@ -209,37 +213,39 @@ class OAGCNN(nn.Module):
     def _change_runtime_parameters(self, epoch):
         if epoch not in self.runtime_actions:
             return
+        actions = self.runtime_actions[epoch]
+        # Not needed, but to make sure all works as expected
+        done_actions = []
 
-        action = self.runtime_actions[epoch]
+        for action in actions:
+            if action == "FreezeRVOSEncoder":
+                if not isinstance(self.feature_extractor, RVOSFeatureExtractor):
+                    raise ValueError("Current feature extractor is not RVOSFeatureExtractor and action is {}".format(action))
+                self.feature_extractor.freeze_rvos_encoder()
+                done_actions.append(action)
 
-        if action == "FreezeRVOSEncoder":
-            if not isinstance(self.feature_extractor, RVOSFeatureExtractor):
-                raise ValueError("Current feature extractor is not RVOSFeatureExtractor and action is {}".format(action))
-            self.feature_extractor.freeze_rvos_encoder()
+            elif action == "UnfreezeRVOSEncoder":
+                if not isinstance(self.feature_extractor, RVOSFeatureExtractor):
+                    raise ValueError("Current feature extractor is not RVOSFeatureExtractor and action is {}".format(action))
+                self.feature_extractor.unfreeze_rvos_encoder()
+                done_actions.append(action)
 
-        elif action == "UnfreezeRVOSEncoder":
-            if not isinstance(self.feature_extractor, RVOSFeatureExtractor):
-                raise ValueError("Current feature extractor is not RVOSFeatureExtractor and action is {}".format(action))
-            self.feature_extractor.unfreeze_rvos_encoder()
+            elif action == "UsePreviousInferenceMask":
+                self.use_previous_inference_mask = True
+                done_actions.append(action)
 
-        elif action == "UsePreviousInferenceMask":
-            self.use_previous_inference_mask = True
+            elif action == "FreezeDeepLabV3Plus":
+                if not isinstance(self.feature_extractor, DeepLabV3Plus):
+                    raise ValueError("Current feature extractor is not DeepLabV3Plus and action is {}".format(action))
+                self.feature_extractor.freeze_deeplab()
+                done_actions.append(action)
 
-        elif action == "FreezeDeepLabV3Plus":
-            if not isinstance(self.feature_extractor, DeepLabV3Plus):
-                raise ValueError("Current feature extractor is not DeepLabV3Plus and action is {}".format(action))
-            self.feature_extractor.freeze_deeplab()
-
-        return action
+        return actions
 
     def actions_after_epoch(self, epoch):
         # When an action is performed, we want to reset the patience from the validator
-        action_done = []
-        action_done.append(self._perform_lr_scheduler_step(epoch))
-        return action_done
+        return self._perform_lr_scheduler_step(epoch)
 
     def actions_before_epoch(self, epoch):
-        action_done = []
-        action_done.append(self._change_runtime_parameters(epoch=epoch))
-        return action_done
+        return  self._change_runtime_parameters(epoch=epoch)
 

@@ -1,10 +1,9 @@
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
 
 class MaskCatEncoder:
-    def __init__(self, input_channels, params=None):
+    def __init__(self, input_channels, cfg):
         self.out_channels = input_channels + 1
 
     def __call__(self, feats, masks_to_concat, num_obj):

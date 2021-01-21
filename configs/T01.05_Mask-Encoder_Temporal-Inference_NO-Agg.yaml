@@ -1,17 +1,17 @@
 
 
 MODEL:
-  LOAD_CHECKPOINT: /mnt/gpid07/users/adria.caelles/output_dir/T02_GCNN-TRAINING/checkpoints/T02_GCNN-TRAINING_epoch_6.pth
+  LOAD_CHECKPOINT: /mnt/gpid07/users/adria.caelles/output_dir/T01.05_MASK-ENCODER_TEMPORAL_INFERENCE_NO_AGG/T01.05_MASK-ENCODER_TEMPORAL_INFERENCE_NO_AGG_epoch_13_BEST.pth
   RUNTIME_CONFIG:
     # Epoch at which the actions will be done
     FreezeRVOSEncoder: 0
     UnfreezeRVOSEncoder: -1
-    UsePreviousInferenceMask: -1
+    UsePreviousInferenceMask: 7
 
 OAGCNN:
-  MESSAGE_PASSING_STEPS: 4
-  USE_TEMPORAL_FEATURES: False
-  BACKPROPAGATE_FEATURES: False
+  MESSAGE_PASSING_STEPS: 1
+  USE_TEMPORAL_FEATURES: True
+  BACKPROPAGATE_FEATURES: True
   USE_PREVIOUS_INFERENCE_MASK: True
   # Whether to backpropagate gradients through the predicted mask or use just the mask itself (data)
   # Keeping gradient will increase memory usage
@@ -24,11 +24,14 @@ OAGCNN:
     FEATURE_EXTRACTOR: RVOSFeatureExtractor
     
     GRAPH:
-      MASK_ENCODING_MODULE: MaskCatEncoder
+      MASK_ENCODING_MODULE: MaskEncoderOneStage
       # GCNNSimple, GCNNConvBlocks, GRUGCNN
-      GCNN_MODULE: GCNNSimple
+      GCNN_MODULE: GRUGCNN
       READ_OUT: ReadOutSimple
 
+
+MaskEncoderOneStage:
+  OUT_CHANNELS: 16
 
 RVOSFeatureExtractor:
   RVOS_ENCODER:
@@ -92,8 +95,14 @@ DATASETS:
   TEST: YouTubeVOS
   TEST_SPLIT: test
 
+PREDICTOR:
+  USE_GPU: True
+  OVERLAY_MASKS: False
+  INSTANCE_RESULTS: False
+  PREPARE_SUBMISSION_RESULTS: True
+  USE_METADATA_GT_INFO: True
 
 GENERAL_CONFIG:
-  TRAIN_NAME: T01.00_SIMPLE-BASELINE
+  TRAIN_NAME: T01.05_MASK-ENCODER_TEMPORAL_tmp
   PRINT_EVERY: 5
   USE_GPU: True
