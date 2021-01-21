@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="calcula" deleteMissingItems="true" persistUploadOnCheckin="false">
+  <component name="PublishConfigData" autoUpload="Always" serverName="adria.caelles@calcula.tsc.upc.edu:2225 password" deleteMissingItems="true" persistUploadOnCheckin="false" showExcludedInSync="true">
     <serverData>
+      <paths name="adria.caelles@calcula.tsc.upc.edu:2225 password">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/home/usuaris/imatge/adria.caelles/workdir/OAGCNNforMVOS" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
       <paths name="calcula">
         <serverdata>
           <mappings>
