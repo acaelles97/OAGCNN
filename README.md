@@ -1,5 +1,6 @@
 # OAGCNN: Object Aware Graph CNN for multiple VOS
-Project done during the Introduction to Research subject at UPC, Master in Advanced Telecommunications Technologies. You can check the details of the project here: [OAGCNN_for_VOS.pdf](https://github.com/acaelles97/OAGCNN/files/6939571/OAGCNN_for_VOS.pdf)
+Project done during the Introduction to Research subject at UPC, Master in Advanced Telecommunications Technologies. You can check the details of the project here: [OAGCNN_for_VOS.pdf](https://github.com/acaelles97/OAGCNN/files/6939938/OAGCNN_for_VOS.pdf)
+
 
 
 # Abstract
